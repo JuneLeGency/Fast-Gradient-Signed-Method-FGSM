@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "StudyPandaAttackDemo"
+version = "0.1.0"
+description = "一个用于教学演示的人工智能对抗攻击（FGSM）GUI应用。"
+authors = [
+  { name="Gemini", email="gemini@google.com" },
+]
+
+dependencies = [
+    "customtkinter==5.2.2",
+    "torch==2.9.0",
+    "torchvision==0.24.0",
+    "matplotlib==3.10.7",
+    "numpy==2.2.6",
+    "pillow==12.0.0"
+]
+
+requires-python = ">=3.8"
+
+[project.scripts]
+start-attack-demo = "app_gui:main"
