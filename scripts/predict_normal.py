@@ -20,11 +20,14 @@ def predict_image(image_path):
         my_font = None
 
     # --- 模型和数据加载 ---
-    print("正在加载预训练的 ResNet50 模型...")
-    # 加载预训练的 ResNet50 模型
-    resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
-    # 设置为评估模式
+    print("正在加载预训练的 ResNet50 模型 (V1 权重)...")
+    # 加载模型和V1权重，以保持与'pretrained=True'相同的行为
+    weights = models.ResNet50_Weights.IMAGENET1K_V1
+    resnet = models.resnet50(weights=weights)
     resnet.eval()
+    
+    # 获取官方预处理流程
+    preprocess_official = weights.transforms()
 
     # 加载 ImageNet 类别索引文件（中文版）
     json_path = os.path.join(os.path.dirname(__file__), "..", "backend", "imagenet_class_index_cn.json")
@@ -39,20 +42,20 @@ def predict_image(image_path):
         return
 
     # 根据图像尺寸决定预处理步骤
-    if image.size == (224, 224):
-        print("图像尺寸为 224x224，将跳过缩放和裁剪步骤。")
+    crop_size_val = preprocess_official.crop_size
+    if not isinstance(crop_size_val, int):
+        crop_size_val = crop_size_val[0]
+
+    if image.size == (crop_size_val, crop_size_val):
+        print(f"图像尺寸为 {image.size}，将跳过缩放和裁剪步骤。")
+        # 对于已裁剪好的图片，只进行ToTensor和Normalize
         preprocess = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            transforms.Normalize(mean=preprocess_official.mean, std=preprocess_official.std),
         ])
     else:
-        print("图像尺寸不为 224x224，将执行标准的缩放和裁剪。")
-        preprocess = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
+        print(f"图像尺寸为 {image.size}，将使用官方标准预处理流程。")
+        preprocess = preprocess_official
 
     # 预处理图像并增加一个维度（batch size）
     input_tensor = preprocess(image)
@@ -89,8 +92,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         image_file = sys.argv[1]
     else:
-        # 如果没有提供参数，默认使用 images/panda.jpg
-        # image_file = os.path.join(os.path.dirname(__file__), '../backend/images', 'panda.jpg')
+        # 如果没有提供参数，默认使用 ../results_images/咖啡杯.png
         image_file = os.path.join(os.path.dirname(__file__), '../results_images', '咖啡杯.png')
         print(f"未指定图像文件，将使用默认图像: {image_file}")
     

@@ -20,8 +20,14 @@ ssl._create_default_https_context = ssl._create_unverified_context
 script_dir = os.path.dirname(__file__)
 
 # --- 模型和数据加载 ---
-alexnet = models.alexnet(weights=models.AlexNet_Weights.IMAGENET1K_V1)
+print("正在加载预训练的 AlexNet 模型 (V1 权重)...")
+# 加载模型和V1权重，以保持与'pretrained=True'相同的行为
+weights = models.AlexNet_Weights.IMAGENET1K_V1
+alexnet = models.alexnet(weights=weights)
 alexnet.eval() 
+
+# 获取官方预处理流程以复用其参数
+preprocess_official = weights.transforms()
 
 json_path = os.path.join(script_dir, "..", "backend", "imagenet_class_index_cn.json")
 with open(json_path, encoding='utf-8') as f:
@@ -31,12 +37,11 @@ with open(json_path, encoding='utf-8') as f:
 image_path = os.path.join(script_dir, "..", "backend", "images", "panda.jpg")
 image = Image.open(image_path)
 
-mean = [0.485, 0.456, 0.406]
-std = [0.229, 0.224, 0.225]
+# 此处保持自定义的Resize以维持原始FGSM脚本的行为，但复用官方的ToTensor和Normalize
 preprocess = transforms.Compose([
     transforms.Resize((256, 256)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=mean, std=std)
+    transforms.Normalize(mean=preprocess_official.mean, std=preprocess_official.std),
 ])
 
 input_image = preprocess(image).unsqueeze(0)

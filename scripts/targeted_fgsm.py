@@ -19,7 +19,13 @@ ssl._create_default_https_context = ssl._create_unverified_context
 script_dir = os.path.dirname(__file__)
 
 # --- 模型和数据加载 ---
-resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1).eval()
+print("正在加载预训练的 ResNet50 模型 (V1 权重)...")
+# 加载模型和V1权重，以保持与'pretrained=True'相同的行为
+weights = models.ResNet50_Weights.IMAGENET1K_V1
+resnet = models.resnet50(weights=weights).eval()
+
+# 获取官方预处理流程
+preprocess_official = weights.transforms()
 
 json_path = os.path.join(script_dir, "..", "backend", "imagenet_class_index_cn.json")
 with open(json_path, encoding='utf-8') as f:
@@ -29,17 +35,17 @@ with open(json_path, encoding='utf-8') as f:
 image_path = os.path.join(script_dir, "..", "backend", "images", "panda.jpg")
 image = Image.open(image_path)
 
-preprocess = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
+# 拆分官方预处理流程，以便注入攻击
+# 1. Resize, CenterCrop, ToTensor
+preprocess_no_norm = transforms.Compose([
+    transforms.Resize(preprocess_official.resize_size),
+    transforms.CenterCrop(preprocess_official.crop_size),
     transforms.ToTensor(),
 ])
+# 2. Normalize
+norm = transforms.Normalize(mean=preprocess_official.mean, std=preprocess_official.std)
 
-mean = [0.485, 0.456, 0.406]
-std = [0.229, 0.224, 0.225]
-norm = transforms.Normalize(mean=mean, std=std)
-
-input_tensor_no_norm = preprocess(image).unsqueeze(0)
+input_tensor_no_norm = preprocess_no_norm(image).unsqueeze(0)
 original_normalized_tensor = norm(input_tensor_no_norm.squeeze(0)).unsqueeze(0)
 
 # --- 原始图像预测 ---
@@ -122,16 +128,15 @@ print("\n开始验证保存的对抗样本图像...")
 verify_image = Image.open(save_path).convert("RGB")
 
 # 图像预处理 - 由于保存的图像已经是224x224，我们只需要转换为张量并进行归一化
-# 无需再次Resize和CenterCrop
 verify_preprocess = transforms.Compose([
     transforms.ToTensor(),
+    norm, # 复用上面定义的norm
 ])
-verify_tensor_no_norm = verify_preprocess(verify_image).unsqueeze(0)
-verify_normalized_tensor = norm(verify_tensor_no_norm.squeeze(0)).unsqueeze(0)
+verify_tensor = verify_preprocess(verify_image).unsqueeze(0)
 
 # 使用模型进行预测
 with torch.no_grad():
-    verify_predictions = resnet(verify_normalized_tensor)
+    verify_predictions = resnet(verify_tensor)
     (verify_class, verify_dim) = return_class_name(verify_predictions, id_classname)
     verify_acc = return_class_accuracy(verify_predictions, verify_dim)
     print(f"修正后验证结果: 预测类别 = '{verify_class}', 置信度 = {verify_acc:.2f}%")
