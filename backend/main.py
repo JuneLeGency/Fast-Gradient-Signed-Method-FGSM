@@ -99,6 +99,7 @@ app.mount("/", StaticFiles(directory="../frontend/build", html=True), name="stat
 
 # --- 启动服务 ---
 if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
     print("后端服务代码已更新为统一服务模式。")
     print("请在终端中，进入 backend 目录，然后手动运行以下命令来启动服务：")
     print("uvicorn main:app --reload --host 0.0.0.0 --port 8000")

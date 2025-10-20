@@ -69,7 +69,7 @@ function App() {
 
   const handleFgsmAttack = async () => {
     setIsAttacking(true);
-    setFgsmResult(null); // Clear previous results
+    setFgsmResult(null);
     try {
       const response = await fetch(`${API_BASE_URL}/attack/fgsm/?epsilon=${epsilon}`);
       if (!response.ok) {
@@ -131,7 +131,6 @@ function App() {
     };
   };
 
-
   const renderNormalPredictionTab = () => (
     <div className={`tab-pane ${activeTab === 'normal' ? 'active' : ''}`}>
       <h2>正常图像识别</h2>
@@ -150,52 +149,6 @@ function App() {
       <pre className="results-text">{predictionResult}</pre>
     </div>
   );
-
-  // State for Targeted Attack Tab
-  const [progress, setProgress] = useState(0);
-  const [targetedResult, setTargetedResult] = useState(null);
-  const [isTargetAttacking, setIsTargetAttacking] = useState(false);
-  const [targetedStatus, setTargetedStatus] = useState('等待开始...');
-
-  const handleTargetedAttack = () => {
-    setIsTargetAttacking(true);
-    setTargetedResult(null);
-    setProgress(0);
-    setTargetedStatus('正在连接到后端服务...');
-
-    const ws = new WebSocket(`${API_BASE_URL.replace('http', 'ws')}/attack/targeted_ws`);
-
-    ws.onopen = () => {
-      setTargetedStatus('连接成功，开始执行迭代攻击 (约1-2分钟)...');
-    };
-
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.type === 'progress') {
-        setProgress(message.value);
-        setTargetedStatus(`攻击正在进行中... ${Math.round(message.value * 100)}%`);
-      } else if (message.type === 'result') {
-        setTargetedResult(message.data);
-        setTargetedStatus('攻击完成！');
-      } else if (message.type === 'error') {
-        setTargetedStatus(`发生错误: ${message.message}`);
-        setIsTargetAttacking(false);
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-      setTargetedStatus('WebSocket 连接出错，请检查后端服务是否正在运行。');
-      setIsTargetAttacking(false);
-    };
-
-    ws.onclose = () => {
-      setIsTargetAttacking(false);
-      if (progress < 1) { // If closed prematurely
-          setTargetedStatus('连接已断开');
-      }
-    };
-  };
 
   const renderFgsmAttackTab = () => (
     <div className={`tab-pane ${activeTab === 'fgsm' ? 'active' : ''}`}>
