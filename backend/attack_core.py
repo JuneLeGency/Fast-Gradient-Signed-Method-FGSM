@@ -14,7 +14,7 @@ print("正在加载预训练模型和数据...")
 
 ALEXNET_MODEL = models.alexnet(pretrained=True).eval()
 RESNET_MODEL = models.resnet50(pretrained=True).eval()
-
+# --- 图像预处理定义 ---
 script_dir = os.path.dirname(__file__)
 json_path = os.path.join(script_dir, "imagenet_class_index_cn.json")
 with open(json_path, encoding='utf-8') as f:
@@ -36,7 +36,7 @@ def precompute_fgsm_gradient():
     print("首次执行FGSM，正在预计算梯度...")
     image_path = os.path.join(script_dir, 'images', 'panda.jpg')
     image = Image.open(image_path).convert('RGB')
-    
+
     preprocess = transforms.Compose([
         transforms.Resize((256, 256)),
         transforms.ToTensor(),
@@ -68,11 +68,19 @@ def predict_image(image_path):
     except FileNotFoundError:
         return None, f"错误：找不到文件 {image_path}"
 
-    preprocess = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
+    # 根据图像尺寸决定预处理步骤
+    if image.size == (224, 224):
+        preprocess = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+    else:
+        preprocess = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
     input_tensor = preprocess(image)
     input_batch = input_tensor.unsqueeze(0)
 
@@ -137,7 +145,8 @@ def generate_targeted_attack(progress_callback, target_class_id=504):
     image = Image.open(image_path).convert('RGB')
 
     preprocess_no_norm = transforms.Compose([
-        transforms.Resize((224, 224)),
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
         transforms.ToTensor(),
     ])
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])

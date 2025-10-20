@@ -38,12 +38,21 @@ def predict_image(image_path):
         print(f"错误：找不到图像文件 {image_path}")
         return
 
-    # 定义图像的预处理步骤
-    preprocess = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
+    # 根据图像尺寸决定预处理步骤
+    if image.size == (224, 224):
+        print("图像尺寸为 224x224，将跳过缩放和裁剪步骤。")
+        preprocess = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+    else:
+        print("图像尺寸不为 224x224，将执行标准的缩放和裁剪。")
+        preprocess = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
 
     # 预处理图像并增加一个维度（batch size）
     input_tensor = preprocess(image)
@@ -81,7 +90,8 @@ if __name__ == "__main__":
         image_file = sys.argv[1]
     else:
         # 如果没有提供参数，默认使用 images/panda.jpg
-        image_file = os.path.join(os.path.dirname(__file__), '../backend/images', 'coffee.png')
+        # image_file = os.path.join(os.path.dirname(__file__), '../backend/images', 'panda.jpg')
+        image_file = os.path.join(os.path.dirname(__file__), '../results_images', '咖啡杯.png')
         print(f"未指定图像文件，将使用默认图像: {image_file}")
     
     predict_image(image_file)

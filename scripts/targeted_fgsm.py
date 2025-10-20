@@ -30,7 +30,8 @@ image_path = os.path.join(script_dir, "..", "backend", "images", "panda.jpg")
 image = Image.open(image_path)
 
 preprocess = transforms.Compose([
-    transforms.Resize((224, 224)),
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
     transforms.ToTensor(),
 ])
 
@@ -94,3 +95,43 @@ for i in range(num_iterations + 1):
             visualize(original_normalized_tensor, perturbed_image_normalized, epsilon, delta.detach(), target_class, required_class_name, target_acc, adversarial_acc, acc_of_original)
 
 print("\n目标攻击演示完成。")
+
+
+# --- 保存并验证最终的对抗样本图像 ---
+print("\n--- 保存并验证最终的对抗样本图像 ---")
+
+# 获取最终的对抗图像张量 (未标准化)
+final_perturbed_image_tensor = (input_tensor_no_norm + delta).squeeze(0)
+# 将张量值裁剪到[0, 1]范围，以确保它是有效的图像
+final_perturbed_image_tensor.data.clamp_(0, 1)
+
+# 转换为PIL图像
+to_pil = transforms.ToPILImage()
+final_pil_image = to_pil(final_perturbed_image_tensor.cpu())
+
+# 定义保存路径并保存
+results_dir = os.path.join(script_dir, "..", "results_images")
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
+save_path = os.path.join(results_dir, f"{required_class_name}.png")
+final_pil_image.save(save_path)
+print(f"最终的对抗样本图像已保存到: {save_path}")
+
+# --- 加载并验证保存的图像 ---
+print("\n开始验证保存的对抗样本图像...")
+verify_image = Image.open(save_path).convert("RGB")
+
+# 图像预处理 - 由于保存的图像已经是224x224，我们只需要转换为张量并进行归一化
+# 无需再次Resize和CenterCrop
+verify_preprocess = transforms.Compose([
+    transforms.ToTensor(),
+])
+verify_tensor_no_norm = verify_preprocess(verify_image).unsqueeze(0)
+verify_normalized_tensor = norm(verify_tensor_no_norm.squeeze(0)).unsqueeze(0)
+
+# 使用模型进行预测
+with torch.no_grad():
+    verify_predictions = resnet(verify_normalized_tensor)
+    (verify_class, verify_dim) = return_class_name(verify_predictions, id_classname)
+    verify_acc = return_class_accuracy(verify_predictions, verify_dim)
+    print(f"修正后验证结果: 预测类别 = '{verify_class}', 置信度 = {verify_acc:.2f}%")
