@@ -86,3 +86,12 @@ Fast-Gradient-Signed-Method-FGSM/
 ├── pyproject.toml        # Python 项目配置文件 (包含所有依赖)
 └── README_CN.md          # 本说明文档
 ```
+
+引用：
+https://docs.pytorch.org/vision/stable/models.html#classification
+
+https://www.tensorflow.org/tutorials/generative/adversarial_fgsm?hl=zh-cn
+
+https://github.com/tensorflow/docs-l10n/blob/master/site/zh-cn/tutorials/generative/adversarial_fgsm.ipynb
+
+https://pytorch123.com/FourSection/AdversarialExampleGene/
