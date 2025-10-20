@@ -140,7 +140,7 @@ def generate_fgsm_attack(epsilon):
 
     return original_pil, perturbation_pil, adversarial_pil, original_text, adversarial_text
 
-def generate_targeted_attack(progress_callback):
+def generate_targeted_attack(progress_callback, target_class_id=504):
     """
     执行迭代式FGSM定向攻击。
     Args:
@@ -176,7 +176,7 @@ def generate_targeted_attack(progress_callback):
 
     # --- 目标攻击设置 ---
     actual_class = torch.LongTensor([target_class_id])
-    required_class_id = 504 # 咖啡杯 (coffee_mug)
+    required_class_id = target_class_id # 使用传入的ID
     required_class = torch.LongTensor([required_class_id])
     required_class_name = ID_CLASSNAME[required_class_id][1]
 

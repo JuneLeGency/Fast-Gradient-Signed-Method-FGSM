@@ -1,15 +1,12 @@
-import os
-# 解决SSL证书问题，必须在任何可能触发网络请求的导入之前执行
-import ssl
-import threading
-from tkinter import filedialog
-
 import customtkinter
-from PIL import Image
+import tkinter
+from tkinter import filedialog
+from PIL import Image, ImageTk
+import os
+import sys
+import threading
 
-ssl._create_default_https_context = ssl._create_unverified_context
-
-# 从 backend 包中直接导入核心逻辑
+# 导入我们的核心逻辑
 from backend import attack_core
 
 class App(customtkinter.CTk):
@@ -104,21 +101,33 @@ class App(customtkinter.CTk):
 
     def setup_targeted_attack_tab(self):
         tab = self.tab_view.tab("定向攻击")
-        tab.grid_columnconfigure(0, weight=1)
+        tab.grid_columnconfigure(1, weight=1)
         tab.grid_rowconfigure(2, weight=1)
 
-        info_label = customtkinter.CTkLabel(tab, text="此功能将固定攻击 backend/images/panda.jpg 图片，目标为“咖啡杯”", anchor="center")
-        info_label.grid(row=0, column=0, padx=20, pady=(10,0))
+        # --- Widgets ---
+        # 准备类别列表用于下拉框
+        self.class_list_for_gui = [f"{v[1]} ({k})" for k, v in attack_core.ID_CLASSNAME.items()]
+        self.class_map_for_gui = {f"{v[1]} ({k})": k for k, v in attack_core.ID_CLASSNAME.items()}
 
-        self.targeted_attack_button = customtkinter.CTkButton(tab, text="开始攻击", command=self.run_targeted_attack)
-        self.targeted_attack_button.grid(row=1, column=0, padx=20, pady=10)
+        info_label = customtkinter.CTkLabel(tab, text="此功能将固定攻击 backend/images/panda.jpg 图片", anchor="center")
+        info_label.grid(row=0, column=0, columnspan=2, padx=20, pady=(10,0))
+
+        controls_frame = customtkinter.CTkFrame(tab)
+        controls_frame.grid(row=1, column=0, columnspan=2, padx=20, pady=10)
+
+        self.target_class_combobox = customtkinter.CTkComboBox(controls_frame, values=self.class_list_for_gui, width=250)
+        self.target_class_combobox.set("咖啡杯 (504)")
+        self.target_class_combobox.pack(side="left", padx=10, pady=10)
+
+        self.targeted_attack_button = customtkinter.CTkButton(controls_frame, text="开始攻击", command=self.run_targeted_attack)
+        self.targeted_attack_button.pack(side="left", padx=10, pady=10)
 
         self.progress_bar = customtkinter.CTkProgressBar(tab, orientation="horizontal", mode="determinate")
         self.progress_bar.set(0)
-        self.progress_bar.grid(row=1, column=1, padx=20, pady=10, sticky="ew")
+        self.progress_bar.grid(row=2, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
 
         targeted_results_frame = customtkinter.CTkFrame(tab)
-        targeted_results_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=10, sticky="nsew")
+        targeted_results_frame.grid(row=3, column=0, columnspan=2, padx=20, pady=10, sticky="nsew")
         targeted_results_frame.grid_columnconfigure((0,1,2), weight=1)
         targeted_results_frame.grid_rowconfigure(1, weight=1)
 
@@ -138,7 +147,7 @@ class App(customtkinter.CTk):
         self.targeted_adv_image_display.grid(row=1, column=2, sticky="nsew", padx=5, pady=5)
 
         targeted_text_frame = customtkinter.CTkFrame(tab)
-        targeted_text_frame.grid(row=3, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
+        targeted_text_frame.grid(row=4, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
         targeted_text_frame.grid_columnconfigure((0,1), weight=1)
         self.targeted_orig_text = customtkinter.CTkTextbox(targeted_text_frame, height=100)
         self.targeted_orig_text.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
@@ -196,7 +205,15 @@ class App(customtkinter.CTk):
         self.fgsm_adv_image_display.configure(image=self.get_resized_ctk_image(adv_pil, w, h))
 
     def run_targeted_attack(self):
+        selected_class_str = self.target_class_combobox.get()
+        target_id = self.class_map_for_gui.get(selected_class_str)
+
+        if target_id is None:
+            tkinter.messagebox.showerror("错误", "无效的选择，请从列表中选择一个目标。")
+            return
+
         self.targeted_attack_button.configure(state="disabled")
+        self.target_class_combobox.configure(state="disabled")
         self.targeted_orig_text.delete("0.0", "end")
         self.targeted_adv_text.delete("0.0", "end")
         self.targeted_orig_text.insert("0.0", "正在进行迭代式攻击...")
@@ -204,11 +221,11 @@ class App(customtkinter.CTk):
         self.progress_bar.set(0)
         self.update()
 
-        attack_thread = threading.Thread(target=self._execute_targeted_attack)
+        attack_thread = threading.Thread(target=self._execute_targeted_attack, args=(target_id,))
         attack_thread.start()
 
-    def _execute_targeted_attack(self):
-        results = attack_core.generate_targeted_attack(self.update_progress_bar)
+    def _execute_targeted_attack(self, target_id):
+        results = attack_core.generate_targeted_attack(self.update_progress_bar, target_class_id=target_id)
         self.after(0, self.update_targeted_ui, results)
 
     def update_progress_bar(self, value):
@@ -228,6 +245,7 @@ class App(customtkinter.CTk):
         self.targeted_adv_image_display.configure(image=self.get_resized_ctk_image(adv_pil, w, h))
         
         self.targeted_attack_button.configure(state="normal")
+        self.target_class_combobox.configure(state="normal")
 
     def get_resized_ctk_image(self, pil_image, max_w, max_h):
         max_w = max(max_w, 100)

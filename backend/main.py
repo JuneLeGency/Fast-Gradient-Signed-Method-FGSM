@@ -73,8 +73,22 @@ async def perform_fgsm_attack(epsilon: float = 0.05):
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/classes")
+def get_classes():
+    """返回所有可用的 ImageNet 类别列表。"""
+    # 将字典转换为前端更容易处理的列表格式: [{value: id, label: "中文名 (英文名)"}, ...]
+    class_list = [
+        {
+            "value": key,
+            "label": f"{value[1]} ({value[0].replace('_', ' ')}"
+        }
+        for key, value in attack_core.ID_CLASSNAME.items()
+    ]
+    return class_list
+
 @app.websocket("/api/attack/targeted_ws")
-async def perform_targeted_attack_ws(websocket: WebSocket):
+async def perform_targeted_attack_ws(websocket: WebSocket, target_class_id: int = 504):
+    """通过 WebSocket 执行定向攻击，并实时发送进度和结果。"""
     await websocket.accept()
     loop = asyncio.get_running_loop()
 
@@ -85,10 +99,14 @@ async def perform_targeted_attack_ws(websocket: WebSocket):
         )
 
     try:
+        # 在一个单独的线程中运行耗时的攻击函数
         orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = await run_in_threadpool(
-            attack_core.generate_targeted_attack, progress_callback=progress_callback
+            attack_core.generate_targeted_attack, 
+            target_class_id=target_class_id, 
+            progress_callback=progress_callback
         )
         
+        # 发送最终结果
         await websocket.send_json({
             "type": "result",
             "data": {
