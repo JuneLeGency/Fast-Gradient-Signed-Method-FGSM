@@ -20,6 +20,35 @@ json_path = os.path.join(script_dir, "imagenet_class_index_cn.json")
 with open(json_path, encoding='utf-8') as f:
     ID_CLASSNAME = {int(k): v for k, v in json.load(f).items()}
 
+# --- 可重用的图像变换 ---
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD = [0.229, 0.224, 0.225]
+
+# 标准归一化变换
+TRANSFORM_NORMALIZE = transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
+
+# 标准的 "Resize -> CenterCrop" 变换
+TRANSFORM_RESIZE_CROP = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+])
+
+# 转换为张量
+TRANSFORM_TO_TENSOR = transforms.ToTensor()
+
+# 完整的标准预处理流程
+PREPROCESS_STANDARD = transforms.Compose([
+    TRANSFORM_RESIZE_CROP,
+    TRANSFORM_TO_TENSOR,
+    TRANSFORM_NORMALIZE,
+])
+
+# 仅包含 "ToTensor" 和 "Normalize" 的预处理流程 (用于224x224图像)
+PREPROCESS_TENSOR_NORM = transforms.Compose([
+    TRANSFORM_TO_TENSOR,
+    TRANSFORM_NORMALIZE,
+])
+
 print("模型和数据加载完成。")
 
 # --- 预计算和缓存 ---
@@ -39,8 +68,8 @@ def precompute_fgsm_gradient():
 
     preprocess = transforms.Compose([
         transforms.Resize((256, 256)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        TRANSFORM_TO_TENSOR,
+        TRANSFORM_NORMALIZE,
     ])
 
     input_tensor = preprocess(image).unsqueeze(0)
@@ -70,17 +99,9 @@ def predict_image(image_path):
 
     # 根据图像尺寸决定预处理步骤
     if image.size == (224, 224):
-        preprocess = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
+        preprocess = PREPROCESS_TENSOR_NORM
     else:
-        preprocess = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
+        preprocess = PREPROCESS_STANDARD
     input_tensor = preprocess(image)
     input_batch = input_tensor.unsqueeze(0)
 
@@ -99,8 +120,8 @@ def predict_image(image_path):
     return image, result_text
 
 def denormalize_image(tensor):
-    mean = np.array([0.485, 0.456, 0.406])
-    std = np.array([0.229, 0.224, 0.225])
+    mean = np.array(IMAGENET_MEAN)
+    std = np.array(IMAGENET_STD)
     tensor = tensor.clone().detach().squeeze(0).cpu().numpy()
     tensor = tensor.transpose(1, 2, 0)
     tensor = std * tensor + mean
@@ -145,11 +166,10 @@ def generate_targeted_attack(progress_callback, target_class_id=504):
     image = Image.open(image_path).convert('RGB')
 
     preprocess_no_norm = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
+        TRANSFORM_RESIZE_CROP,
+        TRANSFORM_TO_TENSOR,
     ])
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    normalize = TRANSFORM_NORMALIZE
 
     input_tensor_no_norm = preprocess_no_norm(image).unsqueeze(0)
     original_normalized_tensor = normalize(input_tensor_no_norm.squeeze(0)).unsqueeze(0)
