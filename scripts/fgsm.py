@@ -20,7 +20,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 script_dir = os.path.dirname(__file__)
 
 # --- 模型和数据加载 ---
-alexnet = models.alexnet(weights=AlexNet_Weights.DEFAULT)
+alexnet = models.alexnet(pretrained=True)
 alexnet.eval() 
 
 json_path = os.path.join(script_dir, "..", "backend", "imagenet_class_index_cn.json")

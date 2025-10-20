@@ -106,10 +106,12 @@ def generate_fgsm_attack(epsilon):
     output = ALEXNET_MODEL(input_batch)
     _, top1_catid = torch.topk(output, 1)
     target_class_id = top1_catid[0].item()
+    target = torch.LongTensor([target_class_id])
     
-    loss = F.nll_loss(output, top1_catid[0])
+    loss = torch.nn.CrossEntropyLoss()
+    loss_val = loss(output, target)
     ALEXNET_MODEL.zero_grad()
-    loss.backward()
+    loss_val.backward()
     
     # 生成扰动
     gradient_sign = input_batch.grad.data.sign()
@@ -170,13 +172,13 @@ def generate_targeted_attack(progress_callback, target_class_id=504):
     with torch.no_grad():
         predictions = RESNET_MODEL(original_normalized_tensor)
         _, top1_catid = torch.topk(predictions, 1)
-        target_class_id = top1_catid[0].item()
-        orig_prob = torch.nn.functional.softmax(predictions[0], dim=0)[target_class_id].item() * 100
-        orig_class_name = ID_CLASSNAME[target_class_id][1]
+        original_class_id = top1_catid[0].item()
+        orig_prob = torch.nn.functional.softmax(predictions[0], dim=0)[original_class_id].item() * 100
+        orig_class_name = ID_CLASSNAME[original_class_id][1]
         original_text = f"原始预测: {orig_class_name}\n置信度: {orig_prob:.2f}%"
 
     # --- 目标攻击设置 ---
-    actual_class = torch.LongTensor([target_class_id])
+    actual_class = torch.LongTensor([original_class_id])
     required_class_id = target_class_id # 使用传入的ID
     required_class = torch.LongTensor([required_class_id])
     required_class_name = ID_CLASSNAME[required_class_id][1]
