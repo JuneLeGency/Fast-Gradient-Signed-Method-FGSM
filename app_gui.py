@@ -3,6 +3,7 @@ import tkinter
 from tkinter import filedialog
 from PIL import Image, ImageTk
 import os
+import threading
 
 # 导入我们重构的核心逻辑
 import attack_core
@@ -13,7 +14,7 @@ class App(customtkinter.CTk):
 
         # ---- 窗口基础设置 ----
         self.title("AI 对抗攻击演示")
-        self.geometry("1100x700")
+        self.geometry("1100x750")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -66,45 +67,88 @@ class App(customtkinter.CTk):
         self.epsilon_slider.pack(side="left", padx=(5,10), pady=10)
         self.epsilon_slider.set(0.05)
 
-        self.attack_button = customtkinter.CTkButton(tab, text="开始攻击", command=self.run_fgsm_attack)
-        self.attack_button.grid(row=1, column=1, padx=20, pady=10)
+        self.fgsm_attack_button = customtkinter.CTkButton(tab, text="开始攻击", command=self.run_fgsm_attack)
+        self.fgsm_attack_button.grid(row=1, column=1, padx=20, pady=10)
 
         # Image display frames
-        self.fgsm_results_frame = customtkinter.CTkFrame(tab)
-        self.fgsm_results_frame.grid(row=2, column=0, columnspan=3, padx=20, pady=10, sticky="nsew")
-        self.fgsm_results_frame.grid_columnconfigure((0,1,2), weight=1)
-        self.fgsm_results_frame.grid_rowconfigure(1, weight=1)
+        fgsm_results_frame = customtkinter.CTkFrame(tab)
+        fgsm_results_frame.grid(row=2, column=0, columnspan=3, padx=20, pady=10, sticky="nsew")
+        fgsm_results_frame.grid_columnconfigure((0,1,2), weight=1)
+        fgsm_results_frame.grid_rowconfigure(1, weight=1)
 
-        self.orig_image_label = customtkinter.CTkLabel(self.fgsm_results_frame, text="原始图像")
-        self.orig_image_label.grid(row=0, column=0, pady=5)
-        self.orig_image_display = customtkinter.CTkLabel(self.fgsm_results_frame, text="")
-        self.orig_image_display.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.fgsm_orig_image_label = customtkinter.CTkLabel(fgsm_results_frame, text="原始图像")
+        self.fgsm_orig_image_label.grid(row=0, column=0, pady=5)
+        self.fgsm_orig_image_display = customtkinter.CTkLabel(fgsm_results_frame, text="")
+        self.fgsm_orig_image_display.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
-        self.pert_image_label = customtkinter.CTkLabel(self.fgsm_results_frame, text="扰动")
-        self.pert_image_label.grid(row=0, column=1, pady=5)
-        self.pert_image_display = customtkinter.CTkLabel(self.fgsm_results_frame, text="")
-        self.pert_image_display.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
+        self.fgsm_pert_image_label = customtkinter.CTkLabel(fgsm_results_frame, text="扰动")
+        self.fgsm_pert_image_label.grid(row=0, column=1, pady=5)
+        self.fgsm_pert_image_display = customtkinter.CTkLabel(fgsm_results_frame, text="")
+        self.fgsm_pert_image_display.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
 
-        self.adv_image_label = customtkinter.CTkLabel(self.fgsm_results_frame, text="对抗样本")
-        self.adv_image_label.grid(row=0, column=2, pady=5)
-        self.adv_image_display = customtkinter.CTkLabel(self.fgsm_results_frame, text="")
-        self.adv_image_display.grid(row=1, column=2, sticky="nsew", padx=5, pady=5)
+        self.fgsm_adv_image_label = customtkinter.CTkLabel(fgsm_results_frame, text="对抗样本")
+        self.fgsm_adv_image_label.grid(row=0, column=2, pady=5)
+        self.fgsm_adv_image_display = customtkinter.CTkLabel(fgsm_results_frame, text="")
+        self.fgsm_adv_image_display.grid(row=1, column=2, sticky="nsew", padx=5, pady=5)
 
         # Text results
-        self.fgsm_text_frame = customtkinter.CTkFrame(tab)
-        self.fgsm_text_frame.grid(row=3, column=0, columnspan=3, padx=20, pady=10, sticky="ew")
-        self.fgsm_text_frame.grid_columnconfigure((0,1), weight=1)
-        self.orig_text = customtkinter.CTkTextbox(self.fgsm_text_frame, height=80)
-        self.orig_text.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
-        self.adv_text = customtkinter.CTkTextbox(self.fgsm_text_frame, height=80)
-        self.adv_text.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
-        self.orig_text.insert("0.0", "攻击前结果...")
-        self.adv_text.insert("0.0", "攻击后结果...")
+        fgsm_text_frame = customtkinter.CTkFrame(tab)
+        fgsm_text_frame.grid(row=3, column=0, columnspan=3, padx=20, pady=10, sticky="ew")
+        fgsm_text_frame.grid_columnconfigure((0,1), weight=1)
+        self.fgsm_orig_text = customtkinter.CTkTextbox(fgsm_text_frame, height=80)
+        self.fgsm_orig_text.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        self.fgsm_adv_text = customtkinter.CTkTextbox(fgsm_text_frame, height=80)
+        self.fgsm_adv_text.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
+        self.fgsm_orig_text.insert("0.0", "攻击前结果...")
+        self.fgsm_adv_text.insert("0.0", "攻击后结果...")
 
     def setup_targeted_attack_tab(self):
         tab = self.tab_view.tab("定向攻击")
-        placeholder_label = customtkinter.CTkLabel(tab, text="此功能正在开发中...", font=("", 20))
-        placeholder_label.pack(expand=True, padx=20, pady=20)
+        tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(2, weight=1)
+
+        # -- Widgets --
+        info_label = customtkinter.CTkLabel(tab, text="此功能将固定攻击 images/panda.jpg 图片，目标为“咖啡杯”", anchor="center")
+        info_label.grid(row=0, column=0, padx=20, pady=(10,0))
+
+        self.targeted_attack_button = customtkinter.CTkButton(tab, text="开始攻击", command=self.run_targeted_attack)
+        self.targeted_attack_button.grid(row=1, column=0, padx=20, pady=10)
+
+        self.progress_bar = customtkinter.CTkProgressBar(tab, orientation="horizontal", mode="determinate")
+        self.progress_bar.set(0)
+        self.progress_bar.grid(row=1, column=1, padx=20, pady=10, sticky="ew")
+
+        # Image display frames
+        targeted_results_frame = customtkinter.CTkFrame(tab)
+        targeted_results_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=10, sticky="nsew")
+        targeted_results_frame.grid_columnconfigure((0,1,2), weight=1)
+        targeted_results_frame.grid_rowconfigure(1, weight=1)
+
+        self.targeted_orig_image_label = customtkinter.CTkLabel(targeted_results_frame, text="原始图像")
+        self.targeted_orig_image_label.grid(row=0, column=0, pady=5)
+        self.targeted_orig_image_display = customtkinter.CTkLabel(targeted_results_frame, text="")
+        self.targeted_orig_image_display.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+
+        self.targeted_pert_image_label = customtkinter.CTkLabel(targeted_results_frame, text="扰动")
+        self.targeted_pert_image_label.grid(row=0, column=1, pady=5)
+        self.targeted_pert_image_display = customtkinter.CTkLabel(targeted_results_frame, text="")
+        self.targeted_pert_image_display.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
+
+        self.targeted_adv_image_label = customtkinter.CTkLabel(targeted_results_frame, text="对抗样本")
+        self.targeted_adv_image_label.grid(row=0, column=2, pady=5)
+        self.targeted_adv_image_display = customtkinter.CTkLabel(targeted_results_frame, text="")
+        self.targeted_adv_image_display.grid(row=1, column=2, sticky="nsew", padx=5, pady=5)
+
+        # Text results
+        targeted_text_frame = customtkinter.CTkFrame(tab)
+        targeted_text_frame.grid(row=3, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
+        targeted_text_frame.grid_columnconfigure((0,1), weight=1)
+        self.targeted_orig_text = customtkinter.CTkTextbox(targeted_text_frame, height=100)
+        self.targeted_orig_text.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        self.targeted_adv_text = customtkinter.CTkTextbox(targeted_text_frame, height=100)
+        self.targeted_adv_text.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
+        self.targeted_orig_text.insert("0.0", "攻击前结果...")
+        self.targeted_adv_text.insert("0.0", "攻击后结果...")
 
     # ---- Callback Functions ----
     def select_and_predict_image(self):
@@ -126,48 +170,93 @@ class App(customtkinter.CTk):
             self.prediction_textbox.insert("0.0", result_text) # Show error message
             return
 
-        # Update text
         self.prediction_textbox.delete("0.0", "end")
         self.prediction_textbox.insert("0.0", result_text)
 
-        # Update image
         w, h = self.image_display_label.winfo_width(), self.image_display_label.winfo_height()
         resized_img = self.get_resized_ctk_image(pil_image, w, h)
         self.image_display_label.configure(image=resized_img)
 
     def run_fgsm_attack(self):
         epsilon = self.epsilon_slider.get()
-        self.orig_text.delete("0.0", "end")
-        self.adv_text.delete("0.0", "end")
-        self.orig_text.insert("0.0", f"正在以 Epsilon={epsilon:.3f} 进行攻击...")
-        self.adv_text.insert("0.0", "请稍候...")
+        self.fgsm_orig_text.delete("0.0", "end")
+        self.fgsm_adv_text.delete("0.0", "end")
+        self.fgsm_orig_text.insert("0.0", f"正在以 Epsilon={epsilon:.3f} 进行攻击...")
+        self.fgsm_adv_text.insert("0.0", "请稍候...")
         self.update()
 
         orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = attack_core.generate_fgsm_attack(epsilon)
 
-        # Update text
-        self.orig_text.delete("0.0", "end")
-        self.orig_text.insert("0.0", orig_txt)
-        self.adv_text.delete("0.0", "end")
-        self.adv_text.insert("0.0", adv_txt)
+        self.fgsm_orig_text.delete("0.0", "end")
+        self.fgsm_orig_text.insert("0.0", orig_txt)
+        self.fgsm_adv_text.delete("0.0", "end")
+        self.fgsm_adv_text.insert("0.0", adv_txt)
 
-        # Update images
-        w, h = self.orig_image_display.winfo_width(), self.orig_image_display.winfo_height()
-        self.orig_image_display.configure(image=self.get_resized_ctk_image(orig_pil, w, h))
-        self.pert_image_display.configure(image=self.get_resized_ctk_image(pert_pil, w, h))
-        self.adv_image_display.configure(image=self.get_resized_ctk_image(adv_pil, w, h))
+        w, h = self.fgsm_orig_image_display.winfo_width(), self.fgsm_orig_image_display.winfo_height()
+        self.fgsm_orig_image_display.configure(image=self.get_resized_ctk_image(orig_pil, w, h))
+        self.fgsm_pert_image_display.configure(image=self.get_resized_ctk_image(pert_pil, w, h))
+        self.fgsm_adv_image_display.configure(image=self.get_resized_ctk_image(adv_pil, w, h))
+
+    def run_targeted_attack(self):
+        self.targeted_attack_button.configure(state="disabled")
+        self.targeted_orig_text.delete("0.0", "end")
+        self.targeted_adv_text.delete("0.0", "end")
+        self.targeted_orig_text.insert("0.0", "正在进行迭代式攻击...")
+        self.targeted_adv_text.insert("0.0", "请稍候，此过程约需1-2分钟...")
+        self.progress_bar.set(0)
+        self.update()
+
+        # 在后台线程中运行攻击，以防GUI冻结
+        attack_thread = threading.Thread(target=self._execute_targeted_attack)
+        attack_thread.start()
+
+    def _execute_targeted_attack(self):
+        results = attack_core.generate_targeted_attack(self.update_progress_bar)
+        # 将结果安全地传递回主线程进行UI更新
+        self.after(0, self.update_targeted_ui, results)
+
+    def update_progress_bar(self, value):
+        self.progress_bar.set(value)
+
+    def update_targeted_ui(self, results):
+        orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = results
+
+        self.targeted_orig_text.delete("0.0", "end")
+        self.targeted_orig_text.insert("0.0", orig_txt)
+        self.targeted_adv_text.delete("0.0", "end")
+        self.targeted_adv_text.insert("0.0", adv_txt)
+
+        w, h = self.targeted_orig_image_display.winfo_width(), self.targeted_orig_image_display.winfo_height()
+        self.targeted_orig_image_display.configure(image=self.get_resized_ctk_image(orig_pil, w, h))
+        self.targeted_pert_image_display.configure(image=self.get_resized_ctk_image(pert_pil, w, h))
+        self.targeted_adv_image_display.configure(image=self.get_resized_ctk_image(adv_pil, w, h))
+        
+        self.targeted_attack_button.configure(state="normal")
 
     def get_resized_ctk_image(self, pil_image, max_w, max_h):
-        max_w = max(max_w, 100) # Ensure non-zero size
+        max_w = max(max_w, 100)
         max_h = max(max_h, 100)
         
-        pil_image.thumbnail((max_w - 20, max_h - 20), Image.Resampling.LANCZOS)
-        return customtkinter.CTkImage(light_image=pil_image, dark_image=pil_image, size=pil_image.size)
+        img_copy = pil_image.copy()
+        img_copy.thumbnail((max_w - 20, max_h - 20), Image.Resampling.LANCZOS)
+        return customtkinter.CTkImage(light_image=img_copy, dark_image=img_copy, size=img_copy.size)
 
 if __name__ == "__main__":
     # 解决SSL证书问题，以便下载模型
     import ssl
     ssl._create_default_https_context = ssl._create_unverified_context
     
+    # 确保在第一次运行时加载模型
+    print("正在初始化应用，首次运行可能需要下载模型文件，请稍候...")
+    try:
+        _ = attack_core.ALEXNET_MODEL
+        _ = attack_core.RESNET_MODEL
+        print("模型已成功加载。")
+    except Exception as e:
+        print(f"加载模型时出错: {e}")
+        print("请检查您的网络连接或SSL证书配置。")
+        # 在GUI中显示错误
+        # 此处可以添加一个错误弹窗
+
     app = App()
     app.mainloop()
