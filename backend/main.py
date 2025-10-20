@@ -7,6 +7,12 @@ import shutil
 import os
 import base64
 from io import BytesIO
+import asyncio
+import ssl
+
+# --- SSL 证书问题修复 ---
+# 在某些环境下，需要此设置来下载PyTorch的预训练模型
+ssl._create_default_https_context = ssl._create_unverified_context
 
 # 导入我们的核心逻辑
 import attack_core
@@ -15,7 +21,6 @@ import attack_core
 app = FastAPI()
 
 # --- 中间件配置 ---
-# 注意：在统一服务模式下，CORS不再是必需的，但保留它对开发无害
 origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
@@ -33,7 +38,10 @@ def pil_to_base64(img):
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
 # --- API & WebSocket 端点 ---
-# **重要**：API路由必须在挂载静态文件之前定义
+
+@app.get("/api")
+def read_root():
+    return {"message": "AI 对抗攻击演示后端服务已启动"}
 
 @app.post("/api/predict/")
 async def predict_normal_image(file: UploadFile = File(...)):
@@ -68,9 +76,13 @@ async def perform_fgsm_attack(epsilon: float = 0.05):
 @app.websocket("/api/attack/targeted_ws")
 async def perform_targeted_attack_ws(websocket: WebSocket):
     await websocket.accept()
-    
-    async def progress_callback(progress):
-        await websocket.send_json({"type": "progress", "value": progress})
+    loop = asyncio.get_running_loop()
+
+    def progress_callback(progress):
+        asyncio.run_coroutine_threadsafe(
+            websocket.send_json({"type": "progress", "value": progress}),
+            loop
+        )
 
     try:
         orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = await run_in_threadpool(
@@ -92,14 +104,11 @@ async def perform_targeted_attack_ws(websocket: WebSocket):
     finally:
         await websocket.close()
 
-# --- 挂载静态文件 ---
-# 将React前端的构建产物挂载到根路径
-# 这必须在所有API路由之后
+# --- 挂载静态文件 (必须在所有API路由之后) ---
 app.mount("/", StaticFiles(directory="../frontend/build", html=True), name="static")
 
 # --- 启动服务 ---
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-    print("后端服务代码已更新为统一服务模式。")
-    print("请在终端中，进入 backend 目录，然后手动运行以下命令来启动服务：")
-    print("uvicorn main:app --reload --host 0.0.0.0 --port 8000")
+    print("正在以开发模式启动服务器...")
+    print("请在浏览器中打开 http://localhost:8000")
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

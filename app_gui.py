@@ -1,10 +1,13 @@
-import customtkinter
-import tkinter
-from tkinter import filedialog
-from PIL import Image, ImageTk
 import os
-import sys
+# 解决SSL证书问题，必须在任何可能触发网络请求的导入之前执行
+import ssl
 import threading
+from tkinter import filedialog
+
+import customtkinter
+from PIL import Image
+
+ssl._create_default_https_context = ssl._create_unverified_context
 
 # 从 backend 包中直接导入核心逻辑
 from backend import attack_core

@@ -1,20 +1,22 @@
-import torch
-import torchvision.models as models
-from PIL import Image, ImageTk
-import torchvision.transforms as transforms
 import json
-import numpy as np
 import os
+
+import numpy as np
+import torch
 import torch.nn.functional as F
 import torch.optim as optim
+import torchvision.models as models
+import torchvision.transforms as transforms
+from PIL import Image
+from torchvision.models import AlexNet_Weights, ResNet50_Weights
 
 # --- 全局资源加载 ---
 # 为了避免在每次调用函数时都重新加载模型和数据，我们在模块级别加载一次
 print("正在加载预训练模型和数据...")
 
-# 模型
-ALEXNET_MODEL = models.alexnet(pretrained=True).eval()
-RESNET_MODEL = models.resnet50(pretrained=True).eval()
+# 模型 (使用新的 `weights` API)
+ALEXNET_MODEL = models.alexnet(weights=AlexNet_Weights.DEFAULT).eval()
+RESNET_MODEL = models.resnet50(weights=ResNet50_Weights.DEFAULT).eval()
 
 # 类别索引 (中文)
 script_dir = os.path.dirname(__file__)
