@@ -1,17 +1,13 @@
-import torch
-import torchvision.models as models
-from PIL import Image
-import torchvision.transforms as transforms
-import json
-import matplotlib.pyplot as plt
-from torch.autograd import Variable
-import torch.nn.functional as F
-import numpy as np
-from torchvision.models import AlexNet_Weights
-
-from utils import return_class_name, return_class_accuracy, visualize
 import os
 import ssl
+
+import torch
+import torchvision.models as models
+import torchvision.transforms as transforms
+from torch.autograd import Variable
+from torchvision.io import read_image
+
+from utils import return_class_accuracy, visualize, get_name_and_id_from_prediction
 
 # --- SSL 证书问题修复 ---
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -21,35 +17,28 @@ script_dir = os.path.dirname(__file__)
 
 # --- 模型和数据加载 ---
 print("正在加载预训练的 AlexNet 模型 (V1 权重)...")
-# 加载模型和V1权重，以保持与'pretrained=True'相同的行为
 weights = models.AlexNet_Weights.IMAGENET1K_V1
 alexnet = models.alexnet(weights=weights)
 alexnet.eval() 
-
-# 获取官方预处理流程以复用其参数
 preprocess_official = weights.transforms()
-
-json_path = os.path.join(script_dir, "..", "backend", "imagenet_class_index_cn.json")
-with open(json_path, encoding='utf-8') as f:
-    id_classname = json.load(f)
 
 # --- 图像预处理 ---
 image_path = os.path.join(script_dir, "..", "backend", "images", "panda.jpg")
-image = Image.open(image_path)
+img_tensor = read_image(image_path)
 
-# 此处保持自定义的Resize以维持原始FGSM脚本的行为，但复用官方的ToTensor和Normalize
+# 此处保持自定义的Resize以维持原始FGSM脚本的行为
 preprocess = transforms.Compose([
     transforms.Resize((256, 256)),
-    transforms.ToTensor(),
+    transforms.ConvertImageDtype(torch.float32),
     transforms.Normalize(mean=preprocess_official.mean, std=preprocess_official.std),
 ])
 
-input_image = preprocess(image).unsqueeze(0)
+input_image = preprocess(img_tensor).unsqueeze(0)
 input_image = Variable(input_image, requires_grad=True)
 
 # --- 原始图像预测 ---
 predictions = alexnet(input_image)
-(target_class, target_dim) = return_class_name(predictions, id_classname)
+target_class, target_dim = get_name_and_id_from_prediction(predictions, weights)
 target_acc = return_class_accuracy(predictions, target_dim)
 
 print(f"原始图像预测: 类别 = {target_class}, 置信度 = {target_acc}%")
@@ -67,10 +56,10 @@ print("\n开始进行 FGSM 攻击...")
 
 for i, eps in enumerate(epsilon):
     if eps == 0:
-        print("\n--- 未添加扰动 (Epsilon = 0) ---")
+        print(f"\n--- 未添加扰动 (Epsilon = {eps}) ---")
         adv_image_tensor = input_image.clone().detach()
         predictions_adv = alexnet.forward(Variable(adv_image_tensor))
-        adversarial_class, class_index = return_class_name(predictions_adv, id_classname)
+        adversarial_class, class_index = get_name_and_id_from_prediction(predictions_adv, weights)
         adversarial_acc = return_class_accuracy(predictions_adv, class_index)
         acc_of_original = return_class_accuracy(predictions_adv, target_dim)
         
@@ -85,7 +74,7 @@ for i, eps in enumerate(epsilon):
     adversarial_image = input_image.data + eps * grads
     predictions_adv = alexnet.forward(Variable(adversarial_image))
 
-    adversarial_class, class_index = return_class_name(predictions_adv, id_classname)
+    adversarial_class, class_index = get_name_and_id_from_prediction(predictions_adv, weights)
     adversarial_acc = return_class_accuracy(predictions_adv, class_index)
     acc_of_original = return_class_accuracy(predictions_adv, target_dim)
     

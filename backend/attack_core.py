@@ -1,4 +1,3 @@
-import json
 import os
 
 import numpy as np
@@ -7,6 +6,12 @@ import torch.optim as optim
 import torchvision.models as models
 import torchvision.transforms as transforms
 from PIL import Image
+from torchvision.io import read_image
+from scripts.utils import get_cn_name_by_id, get_name_and_id_from_prediction
+# --- 路径定义和模块导入 ---
+# 定义项目中的关键路径，使路径管理更清晰健壮
+BACKEND_DIR = os.path.dirname(__file__)
+
 
 # --- 全局资源加载 ---
 print("正在加载预训练模型和数据...")
@@ -22,17 +27,10 @@ RESNET_MODEL = models.resnet50(weights=RESNET50_WEIGHTS).eval()
 RESNET50_PREPROCESS = RESNET50_WEIGHTS.transforms()
 ALEXNET_PREPROCESS = ALEXNET_WEIGHTS.transforms()
 
-# --- 图像索引和路径定义 ---
-script_dir = os.path.dirname(__file__)
-json_path = os.path.join(script_dir, "imagenet_class_index_cn.json")
-with open(json_path, encoding='utf-8') as f:
-    ID_CLASSNAME = {int(k): v for k, v in json.load(f).items()}
-
 print("模型和数据加载完成。")
 
 
 # --- 预计算和缓存 ---
-# 为了与原始脚本行为一致，我们预先计算并缓存FGSM的梯度
 FGSM_GRADIENT = None
 FGSM_INPUT_TENSOR = None
 
@@ -43,24 +41,23 @@ def precompute_fgsm_gradient():
     if FGSM_GRADIENT is not None:
         return
 
-    print("首次执行FGSM，正在预计算梯度...")
-    image_path = os.path.join(script_dir, 'images', 'panda.jpg')
-    image = Image.open(image_path).convert('RGB')
+    image_path = os.path.join(BACKEND_DIR, 'images', 'panda.jpg')
+    
+    img_tensor = read_image(image_path)
 
-    # 此处保持自定义的Resize以维持原始FGSM脚本的行为，但复用官方的ToTensor和Normalize
+    # 此处保持自定义的Resize以维持原始FGSM脚本的行为
     preprocess = transforms.Compose([
         transforms.Resize((256, 256)),
-        transforms.ToTensor(),
+        transforms.ConvertImageDtype(torch.float32),
         transforms.Normalize(mean=ALEXNET_PREPROCESS.mean, std=ALEXNET_PREPROCESS.std),
     ])
 
-    input_tensor = preprocess(image).unsqueeze(0)
+    input_tensor = preprocess(img_tensor).unsqueeze(0)
     input_tensor.requires_grad = True
     FGSM_INPUT_TENSOR = input_tensor
 
     predictions = ALEXNET_MODEL(input_tensor)
-    _, top1_catid = torch.topk(predictions, 1)
-    target_class_id = top1_catid[0].item()
+    _, target_class_id = get_name_and_id_from_prediction(predictions, ALEXNET_WEIGHTS)
     target = torch.LongTensor([target_class_id])
 
     loss = torch.nn.CrossEntropyLoss()
@@ -76,27 +73,31 @@ def precompute_fgsm_gradient():
 
 def predict_image(image_path):
     try:
-        image = Image.open(image_path).convert('RGB')
-    except FileNotFoundError:
-        return None, f"错误：找不到文件 {image_path}"
+        img_tensor = read_image(image_path)
+        display_image = transforms.ToPILImage()(img_tensor)
+    except (FileNotFoundError, RuntimeError):
+        return None, f"错误：找不到或无法读取图像文件 {image_path}"
 
-    # 根据图像尺寸决定预处理步骤
+    # Get the height and width from the tensor shape (C, H, W)
+    img_height, img_width = img_tensor.shape[1], img_tensor.shape[2]
+
+    # Determine the crop size from the official transforms
     crop_size_val = RESNET50_PREPROCESS.crop_size
     if not isinstance(crop_size_val, int):
         crop_size_val = crop_size_val[0]
 
-    if image.size == (crop_size_val, crop_size_val):
-        # 对于已裁剪好的图片，只进行ToTensor和Normalize
+    # Conditionally apply preprocessing
+    if (img_height, img_width) == (crop_size_val, crop_size_val):
+        # For already-cropped images, just convert dtype and normalize
         preprocess = transforms.Compose([
-            transforms.ToTensor(),
+            transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=RESNET50_PREPROCESS.mean, std=RESNET50_PREPROCESS.std),
         ])
     else:
-        # 对于其他尺寸图片，使用官方的完整预处理流程
+        # For other images, use the full official pipeline
         preprocess = RESNET50_PREPROCESS
         
-    input_tensor = preprocess(image)
-    input_batch = input_tensor.unsqueeze(0)
+    input_batch = preprocess(img_tensor).unsqueeze(0)
 
     with torch.no_grad():
         output = RESNET_MODEL(input_batch)
@@ -104,18 +105,17 @@ def predict_image(image_path):
     probabilities = torch.nn.functional.softmax(output[0], dim=0)
     top5_prob, top5_catid = torch.topk(probabilities, 5)
 
-    result_text = "--- Top 5 预测结果 ---" + "\n"
+    result_text = "--- Top 5 预测结果 ---\n"
     for i in range(top5_prob.size(0)):
-        class_name = ID_CLASSNAME[top5_catid[i].item()][1]
+        class_id = top5_catid[i].item()
+        class_name_cn = get_cn_name_by_id(class_id, RESNET50_WEIGHTS)
         probability = top5_prob[i].item() * 100
-        result_text += f"第{i+1}名: {class_name:<10} 置信度: {probability:.2f}%\n"
+        result_text += f"第{i+1}名: {class_name_cn:<10} 置信度: {probability:.2f}%\n"
 
-    return image, result_text
+    return display_image, result_text
 
 
 def denormalize_image(tensor):
-    # 使用ResNet V1的均值和标准差进行反归一化
-    # 注意：AlexNet V1 和 ResNet V1 的值恰好相同
     mean = np.array(RESNET50_PREPROCESS.mean)
     std = np.array(RESNET50_PREPROCESS.std)
     tensor = tensor.clone().detach().squeeze(0).cpu().numpy()
@@ -126,14 +126,14 @@ def denormalize_image(tensor):
 
 
 def generate_fgsm_attack(epsilon):
-    precompute_fgsm_gradient()  # 确保梯度已计算
+    precompute_fgsm_gradient()
 
-    # 使用缓存的梯度和输入张量
     perturbation = epsilon * FGSM_GRADIENT
     adversarial_tensor = FGSM_INPUT_TENSOR.data + perturbation
 
     adversarial_output = ALEXNET_MODEL(adversarial_tensor)
-    adv_prob, adv_catid = torch.topk(torch.nn.functional.softmax(adversarial_output[0], dim=0), 1)
+    adv_prob, adv_catid_tensor = torch.topk(torch.nn.functional.softmax(adversarial_output[0], dim=0), 1)
+    adv_class_id = adv_catid_tensor[0].item()
 
     original_pil = denormalize_image(FGSM_INPUT_TENSOR)
     adversarial_pil = denormalize_image(adversarial_tensor)
@@ -146,14 +146,12 @@ def generate_fgsm_attack(epsilon):
     # 原始结果文本
     with torch.no_grad():
         orig_output = ALEXNET_MODEL(FGSM_INPUT_TENSOR)
-        _, orig_catid = torch.topk(orig_output, 1)
-        orig_class_id = orig_catid[0].item()
-        orig_class_name = ID_CLASSNAME[orig_class_id][1]
+        orig_class_name, orig_class_id = get_name_and_id_from_prediction(orig_output, ALEXNET_WEIGHTS)
         orig_prob = torch.nn.functional.softmax(orig_output[0], dim=0)[orig_class_id].item() * 100
         original_text = f"原始预测: {orig_class_name}\n置信度: {orig_prob:.2f}%"
 
     # 攻击结果文本
-    adv_class_name = ID_CLASSNAME[adv_catid[0].item()][1]
+    adv_class_name = get_cn_name_by_id(adv_class_id, ALEXNET_WEIGHTS)
     adv_probability = adv_prob[0].item() * 100
     adversarial_text = f"攻击后预测: {adv_class_name}\n置信度: {adv_probability:.2f}%"
 
@@ -161,32 +159,29 @@ def generate_fgsm_attack(epsilon):
 
 
 def generate_targeted_attack(progress_callback, target_class_id=504):
-    image_path = os.path.join(script_dir, 'images', 'panda.jpg')
-    image = Image.open(image_path).convert('RGB')
+    image_path = os.path.join(BACKEND_DIR, 'images', 'panda.jpg')
+    img_tensor = read_image(image_path)
 
-    # 使用从官方变换中提取的参数来构建预处理步骤
     preprocess_no_norm = transforms.Compose([
         transforms.Resize(RESNET50_PREPROCESS.resize_size),
         transforms.CenterCrop(RESNET50_PREPROCESS.crop_size),
-        transforms.ToTensor(),
+        transforms.ConvertImageDtype(torch.float32),
     ])
     normalize = transforms.Normalize(mean=RESNET50_PREPROCESS.mean, std=RESNET50_PREPROCESS.std)
 
-    input_tensor_no_norm = preprocess_no_norm(image).unsqueeze(0)
+    input_tensor_no_norm = preprocess_no_norm(img_tensor).unsqueeze(0)
     original_normalized_tensor = normalize(input_tensor_no_norm.squeeze(0)).unsqueeze(0)
 
     with torch.no_grad():
         predictions = RESNET_MODEL(original_normalized_tensor)
-        _, top1_catid = torch.topk(predictions, 1)
-        original_class_id = top1_catid[0].item()
+        orig_class_name, original_class_id = get_name_and_id_from_prediction(predictions, RESNET50_WEIGHTS)
         orig_prob = torch.nn.functional.softmax(predictions[0], dim=0)[original_class_id].item() * 100
-        orig_class_name = ID_CLASSNAME[original_class_id][1]
         original_text = f"原始预测: {orig_class_name}\n置信度: {orig_prob:.2f}%"
 
     actual_class = torch.LongTensor([original_class_id])
     required_class_id = target_class_id
     required_class = torch.LongTensor([required_class_id])
-    required_class_name = ID_CLASSNAME[required_class_id][1]
+    required_class_name = get_cn_name_by_id(required_class_id, RESNET50_WEIGHTS)
 
     delta = torch.zeros_like(input_tensor_no_norm, requires_grad=True)
     optimizer = optim.SGD([delta], lr=0.01)
@@ -217,7 +212,8 @@ def generate_targeted_attack(progress_callback, target_class_id=504):
     final_adv_output = RESNET_MODEL(perturbed_image_normalized)
     adv_prob, adv_catid = torch.topk(torch.nn.functional.softmax(final_adv_output[0], dim=0), 1)
 
-    adv_class_name = ID_CLASSNAME[adv_catid[0].item()][1]
+    adv_class_id = adv_catid[0].item()
+    adv_class_name = get_cn_name_by_id(adv_class_id, RESNET50_WEIGHTS)
     adv_probability = adv_prob[0].item() * 100
     adversarial_text = f"攻击后预测: {adv_class_name}\n置信度: {adv_probability:.2f}%\n(目标: {required_class_name})"
 

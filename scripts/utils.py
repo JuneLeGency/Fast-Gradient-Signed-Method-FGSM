@@ -37,13 +37,59 @@ else:
         print(f"警告：备用字体 {fallback_font} 也无法加载。中文可能无法显示。")
         my_font = None
 
-def return_class_name(predictions, id_classname):
-  """
-  根据模型的预测返回最可能的类别名称和索引。
-  """
-  max_dim = predictions.argmax(dim=1).item()
-  class_name = id_classname[str(max_dim)][1]
-  return class_name , max_dim
+# --- 类别名称查找 (带缓存) ---
+_EN_TO_CN_MAP = None
+_MAP_PATH = os.path.join(os.path.dirname(__file__), '..', 'backend', 'en_to_cn_mapping.json')
+
+def _load_mapping():
+    """将英中映射文件加载到全局变量中，只加载一次。"""
+    global _EN_TO_CN_MAP
+    if _EN_TO_CN_MAP is None:
+        print("首次调用，正在加载英中名称映射文件...")
+        try:
+            with open(_MAP_PATH, "r", encoding="utf-8") as f:
+                _EN_TO_CN_MAP = json.load(f)
+        except Exception as e:
+            print(f"错误：无法加载映射文件 {_MAP_PATH}: {e}")
+            _EN_TO_CN_MAP = {} # 避免后续调用时重复尝试加载
+
+def get_name_and_id_from_prediction(predictions, weights):
+    """
+    从模型输出中获取最高置信度的类别ID和中文名。
+    """
+    _load_mapping() # 确保映射已加载
+    
+    max_dim = predictions.argmax(dim=1).item()
+    
+    english_name = weights.meta["categories"][max_dim]
+    chinese_name = _EN_TO_CN_MAP.get(english_name, english_name)
+    
+    return chinese_name, max_dim
+
+def get_cn_name_by_id(class_id, weights):
+    """
+    根据给定的类别ID获取中文名。
+    """
+    _load_mapping() # 确保映射已加载
+    english_name = weights.meta["categories"][class_id]
+    return _EN_TO_CN_MAP.get(english_name, english_name)
+
+def get_all_classes_with_cn_names(weights):
+    """
+    返回一个包含所有类别及其翻译名称的列表，用于前端选择框。
+    """
+    _load_mapping() # 确保映射已加载
+    english_categories = weights.meta["categories"]
+    class_list = [
+        {
+            "value": i,
+            "label": f"{_EN_TO_CN_MAP.get(english_name, english_name)} ({english_name})"
+        }
+        for i, english_name in enumerate(english_categories)
+    ]
+    return class_list
+
+
 
 
 def return_class_accuracy(predictions, class_id):

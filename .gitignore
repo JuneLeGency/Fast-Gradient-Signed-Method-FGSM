@@ -40,3 +40,6 @@ __MACOSX/
 
 # Local files
 font.zip
+
+# Temporary upload directory
+temp_uploads/

@@ -9,13 +9,29 @@ import base64
 from io import BytesIO
 import asyncio
 import ssl
+import sys
+import logging
+
+# --- 日志配置 ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stdout,
+)
 
 # --- SSL 证书问题修复 ---
-# 在某些环境下，需要此设置来下载PyTorch的预训练模型
 ssl._create_default_https_context = ssl._create_unverified_context
+
+# --- 标准包导入 ---
+# 假设项目从根目录运行，可以直接从 'scripts' 包导入
+from scripts.utils import get_all_classes_with_cn_names
 
 # 导入我们的核心逻辑
 import attack_core
+
+# --- 临时文件目录配置 ---
+TEMP_UPLOAD_DIR = "temp_uploads"
+os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
 
 # --- FastAPI 应用初始化 ---
 app = FastAPI()
@@ -41,20 +57,27 @@ def pil_to_base64(img):
 
 @app.get("/api")
 def read_root():
+    logging.info("根路径被访问。")
     return {"message": "AI 对抗攻击演示后端服务已启动"}
 
 @app.post("/api/predict/")
 async def predict_normal_image(file: UploadFile = File(...)):
-    temp_file_path = f"temp_{file.filename}"
+    # Construct the temporary file path inside the dedicated directory
+    temp_file_path = os.path.join(TEMP_UPLOAD_DIR, f"temp_{file.filename}")
     try:
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
+        logging.info(f"正在对文件进行预测: {file.filename}")
         _, result_text = await run_in_threadpool(attack_core.predict_image, image_path=temp_file_path)
         
-        if "错误" in result_text:
+        if result_text and "错误" in result_text:
+            logging.warning(f"预测过程中发生错误: {result_text}")
             return {"error": result_text}
         return {"predictions": result_text}
+    except Exception:
+        logging.error("对文件 %s 进行正常预测时发生错误。", file.filename, exc_info=True)
+        return {"error": "服务器内部错误，请查看后端日志。"}
     finally:
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
@@ -62,6 +85,7 @@ async def predict_normal_image(file: UploadFile = File(...)):
 @app.get("/api/attack/fgsm/")
 async def perform_fgsm_attack(epsilon: float = 0.05):
     try:
+        logging.info(f"正在执行 FGSM 攻击，Epsilon: {epsilon}")
         orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = await run_in_threadpool(attack_core.generate_fgsm_attack, epsilon=epsilon)
         return {
             "original_image": pil_to_base64(orig_pil),
@@ -70,21 +94,19 @@ async def perform_fgsm_attack(epsilon: float = 0.05):
             "original_text": orig_txt,
             "adversarial_text": adv_txt
         }
-    except Exception as e:
-        return {"error": str(e)}
+    except Exception:
+        logging.error("执行 FGSM 攻击时发生错误。", exc_info=True)
+        return {"error": "服务器内部错误，请查看后端日志。"}
 
 @app.get("/api/classes")
 def get_classes():
     """返回所有可用的 ImageNet 类别列表。"""
-    # 将字典转换为前端更容易处理的列表格式: [{value: id, label: "中文名 (英文名)"}, ...]
-    class_list = [
-        {
-            "value": key,
-            "label": f"{value[1]} ({value[0].replace('_', ' ')}"
-        }
-        for key, value in attack_core.ID_CLASSNAME.items()
-    ]
-    return class_list
+    try:
+        logging.info("正在获取 ImageNet 类别列表。")
+        return get_all_classes_with_cn_names(attack_core.RESNET50_WEIGHTS)
+    except Exception:
+        logging.error("获取 ImageNet 类别列表时发生错误。", exc_info=True)
+        return {"error": "无法获取类别列表，请查看后端日志。"}
 
 @app.websocket("/api/attack/targeted_ws")
 async def perform_targeted_attack_ws(websocket: WebSocket, target_class_id: int = 504):
@@ -99,14 +121,13 @@ async def perform_targeted_attack_ws(websocket: WebSocket, target_class_id: int 
         )
 
     try:
-        # 在一个单独的线程中运行耗时的攻击函数
+        logging.info(f"正在通过 WebSocket 执行目标攻击，目标类别ID: {target_class_id}")
         orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = await run_in_threadpool(
             attack_core.generate_targeted_attack, 
             target_class_id=target_class_id, 
             progress_callback=progress_callback
         )
         
-        # 发送最终结果
         await websocket.send_json({
             "type": "result",
             "data": {
@@ -117,8 +138,9 @@ async def perform_targeted_attack_ws(websocket: WebSocket, target_class_id: int 
                 "adversarial_text": adv_txt
             }
         })
-    except Exception as e:
-        await websocket.send_json({"type": "error", "message": str(e)})
+    except Exception:
+        logging.error("通过 WebSocket 执行目标攻击时发生错误。", exc_info=True)
+        await websocket.send_json({"type": "error", "message": "服务器内部错误，请查看后端日志。"})
     finally:
         await websocket.close()
 
