@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import './App.css';
 
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = "/api";
 
 function App() {
   const [activeTab, setActiveTab] = useState('normal');
@@ -11,6 +11,17 @@ function App() {
   const [preview, setPreview] = useState(null);
   const [predictionResult, setPredictionResult] = useState('预测结果将显示在这里...');
   const [isLoading, setIsLoading] = useState(false);
+
+  // State for FGSM Attack Tab
+  const [epsilon, setEpsilon] = useState(0.05);
+  const [fgsmResult, setFgsmResult] = useState(null);
+  const [isAttacking, setIsAttacking] = useState(false);
+
+  // State for Targeted Attack Tab
+  const [progress, setProgress] = useState(0);
+  const [targetedResult, setTargetedResult] = useState(null);
+  const [isTargetAttacking, setIsTargetAttacking] = useState(false);
+  const [targetedStatus, setTargetedStatus] = useState('等待开始...');
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -51,15 +62,10 @@ function App() {
       }
     } catch (error) {
       console.error("Prediction error:", error);
-      setPredictionResult(`请求后端服务时出错: ${error.message}.\n请确保后端服务正在运行中。`);
+      setPredictionResult(`请求后端服务时出错: ${error.message}。`);
     }
     setIsLoading(false);
   };
-
-  // State for FGSM Attack Tab
-  const [epsilon, setEpsilon] = useState(0.05);
-  const [fgsmResult, setFgsmResult] = useState(null);
-  const [isAttacking, setIsAttacking] = useState(false);
 
   const handleFgsmAttack = async () => {
     setIsAttacking(true);
@@ -78,10 +84,53 @@ function App() {
       }
     } catch (error) {
       console.error("FGSM attack error:", error);
-      alert(`请求后端服务时出错: ${error.message}。\n请确保后端服务正在运行中。`);
+      alert(`请求后端服务时出错: ${error.message}。`);
     }
     setIsAttacking(false);
   };
+
+  const handleTargetedAttack = () => {
+    setIsTargetAttacking(true);
+    setTargetedResult(null);
+    setProgress(0);
+    setTargetedStatus('正在连接到后端服务...');
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/api/attack/targeted_ws`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      setTargetedStatus('连接成功，开始执行迭代攻击 (约1-2分钟)...');
+    };
+
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'progress') {
+        setProgress(message.value);
+        setTargetedStatus(`攻击正在进行中... ${Math.round(message.value * 100)}%`);
+      } else if (message.type === 'result') {
+        setTargetedResult(message.data);
+        setTargetedStatus('攻击完成！');
+      } else if (message.type === 'error') {
+        setTargetedStatus(`发生错误: ${message.message}`);
+        setIsTargetAttacking(false);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+      setTargetedStatus('WebSocket 连接出错，请检查后端服务是否正在运行。');
+      setIsTargetAttacking(false);
+    };
+
+    ws.onclose = () => {
+      setIsTargetAttacking(false);
+      if (progress < 1) { // If closed prematurely
+          setTargetedStatus('连接已断开');
+      }
+    };
+  };
+
 
   const renderNormalPredictionTab = () => (
     <div className={`tab-pane ${activeTab === 'normal' ? 'active' : ''}`}>

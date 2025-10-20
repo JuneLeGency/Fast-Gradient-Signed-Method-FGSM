@@ -1,6 +1,7 @@
 import uvicorn
 from fastapi import FastAPI, File, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.concurrency import run_in_threadpool
 import shutil
 import os
@@ -14,6 +15,7 @@ import attack_core
 app = FastAPI()
 
 # --- 中间件配置 ---
+# 注意：在统一服务模式下，CORS不再是必需的，但保留它对开发无害
 origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
@@ -30,13 +32,10 @@ def pil_to_base64(img):
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-# --- API 端点 (Endpoints) ---
+# --- API & WebSocket 端点 ---
+# **重要**：API路由必须在挂载静态文件之前定义
 
-@app.get("/")
-def read_root():
-    return {"message": "AI 对抗攻击演示后端服务已启动"}
-
-@app.post("/predict/")
+@app.post("/api/predict/")
 async def predict_normal_image(file: UploadFile = File(...)):
     temp_file_path = f"temp_{file.filename}"
     try:
@@ -52,7 +51,7 @@ async def predict_normal_image(file: UploadFile = File(...)):
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
 
-@app.get("/attack/fgsm/")
+@app.get("/api/attack/fgsm/")
 async def perform_fgsm_attack(epsilon: float = 0.05):
     try:
         orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = await run_in_threadpool(attack_core.generate_fgsm_attack, epsilon=epsilon)
@@ -66,7 +65,7 @@ async def perform_fgsm_attack(epsilon: float = 0.05):
     except Exception as e:
         return {"error": str(e)}
 
-@app.websocket("/attack/targeted_ws")
+@app.websocket("/api/attack/targeted_ws")
 async def perform_targeted_attack_ws(websocket: WebSocket):
     await websocket.accept()
     
@@ -74,12 +73,10 @@ async def perform_targeted_attack_ws(websocket: WebSocket):
         await websocket.send_json({"type": "progress", "value": progress})
 
     try:
-        # 在一个单独的线程中运行耗时的攻击函数
         orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = await run_in_threadpool(
             attack_core.generate_targeted_attack, progress_callback=progress_callback
         )
         
-        # 发送最终结果
         await websocket.send_json({
             "type": "result",
             "data": {
@@ -95,8 +92,13 @@ async def perform_targeted_attack_ws(websocket: WebSocket):
     finally:
         await websocket.close()
 
+# --- 挂载静态文件 ---
+# 将React前端的构建产物挂载到根路径
+# 这必须在所有API路由之后
+app.mount("/", StaticFiles(directory="../frontend/build", html=True), name="static")
+
 # --- 启动服务 ---
 if __name__ == "__main__":
-    print("后端服务代码已更新。")
+    print("后端服务代码已更新为统一服务模式。")
     print("请在终端中，进入 backend 目录，然后手动运行以下命令来启动服务：")
     print("uvicorn main:app --reload --host 0.0.0.0 --port 8000")
