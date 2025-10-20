@@ -22,7 +22,7 @@ def predict_image(image_path):
     # --- 模型和数据加载 ---
     print("正在加载预训练的 ResNet50 模型...")
     # 加载预训练的 ResNet50 模型
-    resnet = models.resnet50(pretrained=True)
+    resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
     # 设置为评估模式
     resnet.eval()
 
@@ -90,8 +90,8 @@ if __name__ == "__main__":
         image_file = sys.argv[1]
     else:
         # 如果没有提供参数，默认使用 images/panda.jpg
-        image_file = os.path.join(os.path.dirname(__file__), '../backend/images', 'panda.jpg')
-        # image_file = os.path.join(os.path.dirname(__file__), '../results_images', '咖啡杯.png')
+        # image_file = os.path.join(os.path.dirname(__file__), '../backend/images', 'panda.jpg')
+        image_file = os.path.join(os.path.dirname(__file__), '../results_images', '咖啡杯.png')
         print(f"未指定图像文件，将使用默认图像: {image_file}")
     
     predict_image(image_file)

@@ -3,7 +3,6 @@ import os
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 import torch.optim as optim
 import torchvision.models as models
 import torchvision.transforms as transforms
@@ -12,8 +11,8 @@ from PIL import Image
 # --- 全局资源加载 ---
 print("正在加载预训练模型和数据...")
 
-ALEXNET_MODEL = models.alexnet(pretrained=True).eval()
-RESNET_MODEL = models.resnet50(pretrained=True).eval()
+ALEXNET_MODEL = models.alexnet(weights=models.AlexNet_Weights.IMAGENET1K_V1).eval()
+RESNET_MODEL = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1).eval()
 # --- 图像预处理定义 ---
 script_dir = os.path.dirname(__file__)
 json_path = os.path.join(script_dir, "imagenet_class_index_cn.json")
