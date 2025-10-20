@@ -82,7 +82,7 @@ if __name__ == "__main__":
         image_file = sys.argv[1]
     else:
         # 如果没有提供参数，默认使用 images/panda.jpg
-        image_file = os.path.join(os.path.dirname(__file__), '../backend/images', 'kafei.png')
+        image_file = os.path.join(os.path.dirname(__file__), '../backend/images', 'coffee.png')
         print(f"未指定图像文件，将使用默认图像: {image_file}")
     
     predict_image(image_file)
