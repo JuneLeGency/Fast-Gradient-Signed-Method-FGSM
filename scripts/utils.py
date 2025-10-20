@@ -13,7 +13,8 @@ import sys
 
 # --- Matplotlib 中文显示设置 ---
 # 通过加载本地字体文件来确保中文的正确显示
-font_path = os.path.join(os.path.dirname(__file__), 'Alibaba-PuHuiTi-Medium.ttf')
+# 通过计算脚本的绝对路径来定位项目根目录下的字体文件
+font_path = os.path.join(os.path.dirname(__file__), '..', 'backend', 'Alibaba-PuHuiTi-Medium.ttf')
 if os.path.exists(font_path):
     my_font = FontProperties(fname=font_path)
 else:

@@ -16,18 +16,17 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 
 # 获取当前脚本所在目录
-script_dir = os.path.dirname(os.path.abspath(__file__))
+script_dir = os.path.dirname(__file__)
 
 # --- 模型和数据加载 ---
-resnet = models.resnet50(pretrained=True)
-resnet.eval()
+resnet = models.resnet50(pretrained=True).eval()
 
-json_path = os.path.join(script_dir, "imagenet_class_index_cn.json")
+json_path = os.path.join(script_dir, "..", "backend", "imagenet_class_index_cn.json")
 with open(json_path, encoding='utf-8') as f:
     id_classname = json.load(f)
 
 # --- 图像预处理 ---
-image_path = os.path.join(script_dir, "images", "panda.jpg")
+image_path = os.path.join(script_dir, "..", "backend", "images", "panda.jpg")
 image = Image.open(image_path)
 
 preprocess = transforms.Compose([

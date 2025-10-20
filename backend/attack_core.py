@@ -15,9 +15,10 @@ from torchvision.models import AlexNet_Weights, ResNet50_Weights
 print("正在加载预训练模型和数据...")
 
 # 模型 (使用新的 `weights` API)
-ALEXNET_MODEL = models.alexnet(weights=AlexNet_Weights.DEFAULT).eval()
-RESNET_MODEL = models.resnet50(weights=ResNet50_Weights.DEFAULT).eval()
-
+# ALEXNET_MODEL = models.alexnet(weights=AlexNet_Weights.DEFAULT).eval()
+# RESNET_MODEL = models.resnet50(weights=ResNet50_Weights.DEFAULT).eval()
+ALEXNET_MODEL = models.alexnet(pretrained=True).eval()
+RESNET_MODEL = models.resnet50(pretrained=True).eval()
 # 类别索引 (中文)
 script_dir = os.path.dirname(__file__)
 json_path = os.path.join(script_dir, "imagenet_class_index_cn.json")

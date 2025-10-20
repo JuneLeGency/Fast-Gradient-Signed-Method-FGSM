@@ -12,8 +12,7 @@ def predict_image(image_path):
     """
     加载预训练的 ResNet50 模型，对单张图片进行预测，并显示Top 5的结果。
     """
-    # --- Matplotlib 中文显示设置 ---
-    font_path = os.path.join(os.path.dirname(__file__), 'Alibaba-PuHuiTi-Medium.ttf')
+    font_path = os.path.join(os.path.dirname(__file__), '..', 'backend', 'Alibaba-PuHuiTi-Medium.ttf')
     if os.path.exists(font_path):
         my_font = FontProperties(fname=font_path)
     else:
@@ -28,7 +27,7 @@ def predict_image(image_path):
     resnet.eval()
 
     # 加载 ImageNet 类别索引文件（中文版）
-    json_path = os.path.join(os.path.dirname(__file__), "imagenet_class_index_cn.json")
+    json_path = os.path.join(os.path.dirname(__file__), "..", "backend", "imagenet_class_index_cn.json")
     with open(json_path, encoding='utf-8') as f:
         id_classname = {int(k): v for k, v in json.load(f).items()}
 
