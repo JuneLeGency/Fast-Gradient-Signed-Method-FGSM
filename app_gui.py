@@ -1,10 +1,12 @@
 import customtkinter
 import tkinter
 from tkinter import filedialog
-from PIL import Image, ImageTk
+from PIL import Image
 import os
 import sys
 import threading
+
+from scripts.utils import get_all_classes_with_cn_names
 
 # 导入我们的核心逻辑
 from backend import attack_core
@@ -105,9 +107,10 @@ class App(customtkinter.CTk):
         tab.grid_rowconfigure(2, weight=1)
 
         # --- Widgets ---
-        # 准备类别列表用于下拉框
-        self.class_list_for_gui = [f"{v[1]} ({k})" for k, v in attack_core.ID_CLASSNAME.items()]
-        self.class_map_for_gui = {f"{v[1]} ({k})": k for k, v in attack_core.ID_CLASSNAME.items()}
+        # 使用新的工具函数准备类别列表
+        all_classes = get_all_classes_with_cn_names(attack_core.RESNET50_WEIGHTS)
+        self.class_list_for_gui = [item["label"] for item in all_classes]
+        self.class_map_for_gui = {item["label"]: item["value"] for item in all_classes}
 
         info_label = customtkinter.CTkLabel(tab, text="此功能将固定攻击 backend/images/panda.jpg 图片", anchor="center")
         info_label.grid(row=0, column=0, columnspan=2, padx=20, pady=(10,0))
@@ -116,7 +119,9 @@ class App(customtkinter.CTk):
         controls_frame.grid(row=1, column=0, columnspan=2, padx=20, pady=10)
 
         self.target_class_combobox = customtkinter.CTkComboBox(controls_frame, values=self.class_list_for_gui, width=250)
-        self.target_class_combobox.set("咖啡杯 (504)")
+        # 查找并设置默认值
+        default_label = next((item["label"] for item in all_classes if item["value"] == 504), "")
+        self.target_class_combobox.set(default_label)
         self.target_class_combobox.pack(side="left", padx=10, pady=10)
 
         self.targeted_attack_button = customtkinter.CTkButton(controls_frame, text="开始攻击", command=self.run_targeted_attack)
@@ -180,9 +185,7 @@ class App(customtkinter.CTk):
         self.prediction_textbox.delete("0.0", "end")
         self.prediction_textbox.insert("0.0", result_text)
 
-        w, h = self.image_display_label.winfo_width(), self.image_display_label.winfo_height()
-        resized_img = self.get_resized_ctk_image(pil_image, w, h)
-        self.image_display_label.configure(image=resized_img)
+        self._update_image_display(self.image_display_label, pil_image)
 
     def run_fgsm_attack(self):
         epsilon = self.epsilon_slider.get()
@@ -199,10 +202,9 @@ class App(customtkinter.CTk):
         self.fgsm_adv_text.delete("0.0", "end")
         self.fgsm_adv_text.insert("0.0", adv_txt)
 
-        w, h = self.fgsm_orig_image_display.winfo_width(), self.fgsm_orig_image_display.winfo_height()
-        self.fgsm_orig_image_display.configure(image=self.get_resized_ctk_image(orig_pil, w, h))
-        self.fgsm_pert_image_display.configure(image=self.get_resized_ctk_image(pert_pil, w, h))
-        self.fgsm_adv_image_display.configure(image=self.get_resized_ctk_image(adv_pil, w, h))
+        self._update_image_display(self.fgsm_orig_image_display, orig_pil)
+        self._update_image_display(self.fgsm_pert_image_display, pert_pil)
+        self._update_image_display(self.fgsm_adv_image_display, adv_pil)
 
     def run_targeted_attack(self):
         selected_class_str = self.target_class_combobox.get()
@@ -239,10 +241,9 @@ class App(customtkinter.CTk):
         self.targeted_adv_text.delete("0.0", "end")
         self.targeted_adv_text.insert("0.0", adv_txt)
 
-        w, h = self.targeted_orig_image_display.winfo_width(), self.targeted_orig_image_display.winfo_height()
-        self.targeted_orig_image_display.configure(image=self.get_resized_ctk_image(orig_pil, w, h))
-        self.targeted_pert_image_display.configure(image=self.get_resized_ctk_image(pert_pil, w, h))
-        self.targeted_adv_image_display.configure(image=self.get_resized_ctk_image(adv_pil, w, h))
+        self._update_image_display(self.targeted_orig_image_display, orig_pil)
+        self._update_image_display(self.targeted_pert_image_display, pert_pil)
+        self._update_image_display(self.targeted_adv_image_display, adv_pil)
         
         self.targeted_attack_button.configure(state="normal")
         self.target_class_combobox.configure(state="normal")
@@ -254,6 +255,13 @@ class App(customtkinter.CTk):
         img_copy = pil_image.copy()
         img_copy.thumbnail((max_w - 20, max_h - 20), Image.Resampling.LANCZOS)
         return customtkinter.CTkImage(light_image=img_copy, dark_image=img_copy, size=img_copy.size)
+
+    def _update_image_display(self, label_widget, pil_image):
+        """Helper to update a CTkLabel with a new PIL image, ensuring reference is kept."""
+        w, h = label_widget.winfo_width(), label_widget.winfo_height()
+        ctk_img = self.get_resized_ctk_image(pil_image, w, h)
+        label_widget.configure(image=ctk_img)
+        label_widget.image = ctk_img # Keep a reference to prevent garbage collection
 
 if __name__ == "__main__":
     # 解决SSL证书问题，以便下载模型
