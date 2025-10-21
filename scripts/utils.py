@@ -11,25 +11,34 @@ import os
 from matplotlib.font_manager import FontProperties
 import sys
 
+# --- Resource Path Helper ---
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # For development, the base path is the project root
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+    return os.path.join(base_path, relative_path)
+
 # --- Matplotlib 中文显示设置 ---
 # 通过加载本地字体文件来确保中文的正确显示
-# 通过计算脚本的绝对路径来定位项目根目录下的字体文件
-font_path = os.path.join(os.path.dirname(__file__), '..', 'backend', 'Alibaba-PuHuiTi-Medium.ttf')
+font_path = resource_path(os.path.join('backend', 'Alibaba-PuHuiTi-Medium.ttf'))
 if os.path.exists(font_path):
     my_font = FontProperties(fname=font_path)
 else:
-    # 如果找不到字体，就尝试使用一个常见的系统备用字体
-    # 在macOS上是'PingFang SC'，在Windows上是'SimHei'
+    # Fallback font logic remains the same
     if sys.platform == 'darwin':
         fallback_font = 'PingFang SC'
     elif sys.platform == 'win32':
         fallback_font = 'SimHei'
     else:
-        fallback_font = 'sans-serif' # Linux上的通用备用
+        fallback_font = 'sans-serif'
     print(f"警告：字体文件未找到于 {font_path}。将尝试使用备用字体 {fallback_font}。")
     try:
         my_font = FontProperties(fname=fallback_font)
-        # 测试一下备用字体是否真的能找到
         plt.figure(figsize=(0.1, 0.1))
         plt.text(0, 0, "测试", fontproperties=my_font)
         plt.close()
@@ -39,7 +48,7 @@ else:
 
 # --- 类别名称查找 (带缓存) ---
 _EN_TO_CN_MAP = None
-_MAP_PATH = os.path.join(os.path.dirname(__file__), '..', 'backend', 'en_to_cn_mapping.json')
+_MAP_PATH = resource_path(os.path.join('backend', 'en_to_cn_mapping.json'))
 
 def _load_mapping():
     """将英中映射文件加载到全局变量中，只加载一次。"""

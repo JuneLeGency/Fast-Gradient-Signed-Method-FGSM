@@ -22,7 +22,7 @@ dependencies = [
     "python-multipart",
 ]
 
-requires-python = ">=3.10"
+requires-python = ">=3.10, <3.13"
 
 [tool.setuptools.packages.find]
 exclude = ["images*", "results_images*"]
