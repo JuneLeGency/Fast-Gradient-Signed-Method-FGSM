@@ -1,11 +1,7 @@
-body {
-  background-color: #f0f2f5;
-}
-
 .App {
-  padding: 40px;
-  max-width: 1400px;
+  padding: 30px;
   margin: 0 auto;
+  min-height: 100vh;
 }
 
 .results-grid {
@@ -30,12 +26,12 @@ body {
 .results-text {
   white-space: pre-wrap;
   text-align: left;
-  background-color: #fafafa;
   padding: 12px;
   border-radius: 4px;
   font-family: monospace;
   margin-top: 16px;
-  border: 1px solid #e8e8e8;
+  border-width: 1px;
+  border-style: solid;
   overflow-x: auto;
 }
 

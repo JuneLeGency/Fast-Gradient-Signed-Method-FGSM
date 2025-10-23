@@ -15,7 +15,10 @@ import {
   Alert,
   Space,
   notification,
-  Divider
+  Divider,
+  Switch,
+  ConfigProvider,
+  theme
 } from 'antd';
 import { UploadOutlined, ExperimentOutlined, AimOutlined, BugOutlined, DownloadOutlined } from '@ant-design/icons';
 import './App.css';
@@ -28,6 +31,8 @@ const { Option } = Select;
 const API_BASE_URL = "/api";
 
 function App() {
+  const [currentTheme, setCurrentTheme] = useState('light'); // 'light' or 'dark'
+
   // State for Normal Prediction Tab
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -64,6 +69,10 @@ function App() {
     };
     fetchClasses();
   }, []);
+
+  const handleThemeChange = (checked) => {
+    setCurrentTheme(checked ? 'dark' : 'light');
+  };
 
   const handleFileChange = (file) => {
     if (file) {
@@ -229,112 +238,133 @@ function App() {
   );
 
   return (
-    <Layout className="App">
-      <Header style={{ backgroundColor: 'white', textAlign: 'center', borderBottom: '1px solid #f0f0f0' }}>
-        <Title level={2} style={{ margin: '14px 0' }}>
-          <ExperimentOutlined /> AI 对抗攻击演示
-        </Title>
-      </Header>
-      <Content style={{ padding: '24px 0' }}>
-        <Tabs defaultActiveKey="1" centered type="card">
-          <TabPane tab={<span><AimOutlined />正常识别</span>} key="1">
-            <Card>
-              <Title level={4}>正常图像识别</Title>
-              <Paragraph>此功能用于评估AI模型在未经任何攻击的原始图片上的表现。您可以上传一张图片，系统将使用预训练的ResNet-50模型对其进行分类，并显示置信度最高的前5个预测结果。</Paragraph>
-              <Divider />
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <Title level={5}>1. 选择图片</Title>
-                <Upload beforeUpload={handleFileChange} showUploadList={false}>
-                  <Button icon={<UploadOutlined />}>点击选择文件</Button>
-                </Upload>
-                {selectedFile && <Text type="secondary">已选择: {selectedFile.name}</Text>}
-                {preview && <img src={preview} alt="Preview" style={{ maxWidth: 300, marginTop: 20, border: '1px solid #f0f0f0' }} />}
+    <ConfigProvider
+      theme={{
+        algorithm: currentTheme === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
+      }}
+    >
+      <Layout className="App">
+        <Header style={{ 
+          backgroundColor: currentTheme === 'dark' ? '#001529' : '#ffffff', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          borderBottom: '1px solid #f0f0f0'
+        }}>
+          <Title level={2} style={{ margin: 0, color: currentTheme === 'dark' ? 'white' : 'black' }}>
+            <ExperimentOutlined /> AI 对抗攻击演示
+          </Title>
+          <Space>
+            <Text style={{ color: currentTheme === 'dark' ? 'white' : 'black' }}>切换主题:</Text>
+            <Switch
+              checked={currentTheme === 'dark'}
+              onChange={handleThemeChange}
+              checkedChildren="深色"
+              unCheckedChildren="浅色"
+            />
+          </Space>
+        </Header>
+        <Content style={{ padding: '24px 0' }}>
+          <Tabs defaultActiveKey="1" centered type="card">
+            <TabPane tab={<span><AimOutlined />正常识别</span>} key="1">
+              <Card>
+                <Title level={4}>正常图像识别</Title>
+                <Paragraph>此功能用于评估AI模型在未经任何攻击的原始图片上的表现。您可以上传一张图片，系统将使用预训练的ResNet-50模型对其进行分类，并显示置信度最高的前5个预测结果。</Paragraph>
                 <Divider />
-                <Title level={5}>2. 开始识别</Title>
-                <Button type="primary" onClick={handlePredict} loading={isLoading} disabled={!selectedFile}>
-                  {isLoading ? '识别中...' : '开始识别'}
-                </Button>
-                {isLoading && <Spin tip="正在识别..." />}
-                {predictionResult && (
-                  <Alert message={<pre>{predictionResult}</pre>} type="info" style={{ marginTop: 20 }} />
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Title level={5}>1. 选择图片</Title>
+                  <Upload beforeUpload={handleFileChange} showUploadList={false}>
+                    <Button icon={<UploadOutlined />}>点击选择文件</Button>
+                  </Upload>
+                  {selectedFile && <Text type="secondary">已选择: {selectedFile.name}</Text>}
+                  {preview && <img src={preview} alt="Preview" style={{ maxWidth: 300, marginTop: 20, border: '1px solid #f0f0f0' }} />}
+                  <Divider />
+                  <Title level={5}>2. 开始识别</Title>
+                  <Button type="primary" onClick={handlePredict} loading={isLoading} disabled={!selectedFile}>
+                    {isLoading ? '识别中...' : '开始识别'}
+                  </Button>
+                  {isLoading && <Spin tip="正在识别..." />}
+                  {predictionResult && (
+                    <Alert message={<pre>{predictionResult}</pre>} type="info" style={{ marginTop: 20 }} />
+                  )}
+                </Space>
+              </Card>
+            </TabPane>
+            <TabPane tab={<span><BugOutlined />非定向攻击 (FGSM)</span>} key="2">
+              <Card>
+                <Title level={4}>非定向攻击 (Fast Gradient Sign Method)</Title>
+                <Paragraph>非定向攻击旨在让AI模型对图片产生错误分类，但不指定具体的错误类别。我们使用经典的FGSM算法，通过计算损失函数关于输入图像的梯度来生成微小扰动。您可以调整扰动强度(Epsilon)来观察其对攻击效果的影响。</Paragraph>
+                <Divider />
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Title level={5}>1. 选择攻击图片 (可选)</Title>
+                  <Paragraph type="secondary">若不选择，将使用默认的熊猫图片进行攻击。</Paragraph>
+                   <Upload beforeUpload={(file) => { setFgsmFile(file); return false; }} showUploadList={false}>
+                    <Button icon={<UploadOutlined />}>点击选择文件</Button>
+                  </Upload>
+                  {fgsmFile && <Text type="secondary">已选择: {fgsmFile.name}</Text>}
+                  <Divider />
+                  <Title level={5}>2. 设置扰动强度</Title>
+                  <Row align="middle" style={{width: '100%'}}>
+                    <Col span={4}><Text>扰动强度 (Epsilon):</Text></Col>
+                    <Col span={12}><Slider min={0} max={0.2} step={0.005} value={epsilon} onChange={setEpsilon} /></Col>
+                    <Col span={4}><Text>{epsilon.toFixed(3)}</Text></Col>
+                  </Row>
+                  <Divider />
+                  <Title level={5}>3. 开始攻击</Title>
+                  <Button type="primary" onClick={handleFgsmAttack} loading={isAttacking}>
+                    {isAttacking ? '攻击中...' : '开始攻击'}
+                  </Button>
+                </Space>
+                {isAttacking && <Spin tip="正在生成对抗样本..." style={{ display: 'block', marginTop: 24 }} />}
+                {fgsmResult && renderAttackResults(fgsmResult, false)}
+              </Card>
+            </TabPane>
+            <TabPane tab={<span><BugOutlined />定向攻击</span>} key="3">
+              <Card>
+                <Title level={4}>定向攻击 (Iterative FGSM)</Title>
+                <Paragraph>定向攻击的目标是诱导AI模型将图片错误地分类为我们指定的任意类别。此演示采用迭代式FGSM方法，通过多次迭代小幅度的扰动，逐步将模型的预测结果引向目标类别。这是一个更精细、但计算成本更高的攻击方式。</Paragraph>
+                <Divider />
+                 <Space direction="vertical" style={{ width: '100%' }}>
+                  <Title level={5}>1. 选择攻击图片 (可选)</Title>
+                  <Paragraph type="secondary">若不选择，将使用默认的熊猫图片进行攻击。</Paragraph>
+                   <Upload beforeUpload={(file) => { setTargetedFile(file); return false; }} showUploadList={false}>
+                    <Button icon={<UploadOutlined />}>点击选择文件</Button>
+                  </Upload>
+                  {targetedFile && <Text type="secondary">已选择: {targetedFile.name}</Text>}
+                  <Divider />
+                  <Title level={5}>2. 选择攻击目标</Title>
+                  <Select
+                    showSearch
+                    style={{ width: 400 }}
+                    placeholder="搜索并选择一个攻击目标..."
+                    defaultValue={selectedTarget}
+                    onChange={setSelectedTarget}
+                    optionFilterProp="children"
+                    filterOption={(input, option) =>
+                      option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                    }
+                  >
+                    {targetClassList.map(c => <Option key={c.value} value={c.value}>{c.label}</Option>)}
+                  </Select>
+                  <Divider />
+                  <Title level={5}>3. 开始攻击</Title>
+                  <Button type="primary" onClick={handleTargetedAttack} loading={isTargetAttacking}>
+                    {isTargetAttacking ? '攻击进行中...' : '开始定向攻击'}
+                  </Button>
+                </Space>
+                {isTargetAttacking && (
+                  <div style={{ marginTop: 24 }}>
+                    <Paragraph>{targetedStatus}</Paragraph>
+                    <Progress percent={Math.round(progress * 100)} />
+                  </div>
                 )}
-              </Space>
-            </Card>
-          </TabPane>
-          <TabPane tab={<span><BugOutlined />非定向攻击 (FGSM)</span>} key="2">
-            <Card>
-              <Title level={4}>非定向攻击 (Fast Gradient Sign Method)</Title>
-              <Paragraph>非定向攻击旨在让AI模型对图片产生错误分类，但不指定具体的错误类别。我们使用经典的FGSM算法，通过计算损失函数关于输入图像的梯度来生成微小扰动。您可以调整扰动强度(Epsilon)来观察其对攻击效果的影响。</Paragraph>
-              <Divider />
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <Title level={5}>1. 选择攻击图片 (可选)</Title>
-                <Paragraph type="secondary">若不选择，将使用默认的熊猫图片进行攻击。</Paragraph>
-                 <Upload beforeUpload={(file) => { setFgsmFile(file); return false; }} showUploadList={false}>
-                  <Button icon={<UploadOutlined />}>点击选择文件</Button>
-                </Upload>
-                {fgsmFile && <Text type="secondary">已选择: {fgsmFile.name}</Text>}
-                <Divider />
-                <Title level={5}>2. 设置扰动强度</Title>
-                <Row align="middle" style={{width: '100%'}}>
-                  <Col span={4}><Text>扰动强度 (Epsilon):</Text></Col>
-                  <Col span={12}><Slider min={0} max={0.2} step={0.005} value={epsilon} onChange={setEpsilon} /></Col>
-                  <Col span={4}><Text>{epsilon.toFixed(3)}</Text></Col>
-                </Row>
-                <Divider />
-                <Title level={5}>3. 开始攻击</Title>
-                <Button type="primary" onClick={handleFgsmAttack} loading={isAttacking}>
-                  {isAttacking ? '攻击中...' : '开始攻击'}
-                </Button>
-              </Space>
-              {isAttacking && <Spin tip="正在生成对抗样本..." style={{ display: 'block', marginTop: 24 }} />}
-              {fgsmResult && renderAttackResults(fgsmResult, false)}
-            </Card>
-          </TabPane>
-          <TabPane tab={<span><BugOutlined />定向攻击</span>} key="3">
-            <Card>
-              <Title level={4}>定向攻击 (Iterative FGSM)</Title>
-              <Paragraph>定向攻击的目标是诱导AI模型将图片错误地分类为我们指定的任意类别。此演示采用迭代式FGSM方法，通过多次迭代小幅度的扰动，逐步将模型的预测结果引向目标类别。这是一个更精细、但计算成本更高的攻击方式。</Paragraph>
-              <Divider />
-               <Space direction="vertical" style={{ width: '100%' }}>
-                <Title level={5}>1. 选择攻击图片 (可选)</Title>
-                <Paragraph type="secondary">若不选择，将使用默认的熊猫图片进行攻击。</Paragraph>
-                 <Upload beforeUpload={(file) => { setTargetedFile(file); return false; }} showUploadList={false}>
-                  <Button icon={<UploadOutlined />}>点击选择文件</Button>
-                </Upload>
-                {targetedFile && <Text type="secondary">已选择: {targetedFile.name}</Text>}
-                <Divider />
-                <Title level={5}>2. 选择攻击目标</Title>
-                <Select
-                  showSearch
-                  style={{ width: 400 }}
-                  placeholder="搜索并选择一个攻击目标..."
-                  defaultValue={selectedTarget}
-                  onChange={setSelectedTarget}
-                  optionFilterProp="children"
-                  filterOption={(input, option) =>
-                    option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
-                  }
-                >
-                  {targetClassList.map(c => <Option key={c.value} value={c.value}>{c.label}</Option>)}
-                </Select>
-                <Divider />
-                <Title level={5}>3. 开始攻击</Title>
-                <Button type="primary" onClick={handleTargetedAttack} loading={isTargetAttacking}>
-                  {isTargetAttacking ? '攻击进行中...' : '开始定向攻击'}
-                </Button>
-              </Space>
-              {isTargetAttacking && (
-                <div style={{ marginTop: 24 }}>
-                  <Paragraph>{targetedStatus}</Paragraph>
-                  <Progress percent={Math.round(progress * 100)} />
-                </div>
-              )}
-              {targetedResult && renderAttackResults(targetedResult, true)}
-            </Card>
-          </TabPane>
-        </Tabs>
-      </Content>
-    </Layout>
+                {targetedResult && renderAttackResults(targetedResult, true)}
+              </Card>
+            </TabPane>
+          </Tabs>
+        </Content>
+      </Layout>
+    </ConfigProvider>
   );
 }
 
