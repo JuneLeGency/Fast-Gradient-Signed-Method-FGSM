@@ -1,6 +1,6 @@
 import customtkinter
 import tkinter
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from PIL import Image
 import os
 import sys
@@ -20,6 +20,11 @@ class App(customtkinter.CTk):
         self.geometry("1100x750")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
+        
+        # --- 初始化图片路径状态 ---
+        self.fgsm_image_path = None
+        self.targeted_image_path = None
+
 
         # ---- 创建选项卡视图 ----
         self.tab_view = customtkinter.CTkTabview(self, width=250)
@@ -55,22 +60,37 @@ class App(customtkinter.CTk):
     def setup_fgsm_attack_tab(self):
         tab = self.tab_view.tab("非定向攻击 (FGSM)")
         tab.grid_columnconfigure((0, 1, 2), weight=1)
-        tab.grid_rowconfigure(2, weight=1)
+        tab.grid_rowconfigure(3, weight=1) # Adjusted row for results
 
-        info_label = customtkinter.CTkLabel(tab, text="此功能将固定攻击 backend/images/panda.jpg 图片", anchor="center")
-        info_label.grid(row=0, column=0, columnspan=3, padx=20, pady=(10,0))
+        # --- Image Selection ---
+        image_select_frame = customtkinter.CTkFrame(tab)
+        image_select_frame.grid(row=0, column=0, columnspan=3, padx=20, pady=(10,0), sticky="ew")
+        
+        self.fgsm_select_button = customtkinter.CTkButton(image_select_frame, text="选择攻击图片", 
+                                                          command=lambda: self.select_attack_image('fgsm'))
+        self.fgsm_select_button.pack(side="left", padx=10, pady=10)
+        
+        self.fgsm_image_path_label = customtkinter.CTkLabel(image_select_frame, text="将使用默认熊猫图片")
+        self.fgsm_image_path_label.pack(side="left", padx=10, pady=10)
 
-        epsilon_frame = customtkinter.CTkFrame(tab)
-        epsilon_frame.grid(row=1, column=0, padx=20, pady=10)
+        # --- Controls ---
+        controls_frame = customtkinter.CTkFrame(tab)
+        controls_frame.grid(row=1, column=0, columnspan=3, padx=20, pady=10, sticky="ew")
+        controls_frame.grid_columnconfigure(0, weight=1)
+        controls_frame.grid_columnconfigure(1, weight=1)
+
+        epsilon_frame = customtkinter.CTkFrame(controls_frame)
+        epsilon_frame.grid(row=0, column=0, padx=10, pady=5)
         epsilon_label = customtkinter.CTkLabel(epsilon_frame, text="扰动强度 (Epsilon): ")
         epsilon_label.pack(side="left", padx=(10,5), pady=10)
         self.epsilon_slider = customtkinter.CTkSlider(epsilon_frame, from_=0, to=0.2, number_of_steps=20)
         self.epsilon_slider.pack(side="left", padx=(5,10), pady=10)
         self.epsilon_slider.set(0.05)
 
-        self.fgsm_attack_button = customtkinter.CTkButton(tab, text="开始攻击", command=self.run_fgsm_attack)
-        self.fgsm_attack_button.grid(row=1, column=1, padx=20, pady=10)
+        self.fgsm_attack_button = customtkinter.CTkButton(controls_frame, text="开始攻击", command=self.run_fgsm_attack)
+        self.fgsm_attack_button.grid(row=0, column=1, padx=10, pady=5)
 
+        # --- Results Display ---
         fgsm_results_frame = customtkinter.CTkFrame(tab)
         fgsm_results_frame.grid(row=2, column=0, columnspan=3, padx=20, pady=10, sticky="nsew")
         fgsm_results_frame.grid_columnconfigure((0,1,2), weight=1)
@@ -104,22 +124,28 @@ class App(customtkinter.CTk):
     def setup_targeted_attack_tab(self):
         tab = self.tab_view.tab("定向攻击")
         tab.grid_columnconfigure(1, weight=1)
-        tab.grid_rowconfigure(2, weight=1)
+        tab.grid_rowconfigure(3, weight=1) # Adjusted row for results
 
-        # --- Widgets ---
-        # 使用新的工具函数准备类别列表
-        all_classes = get_all_classes_with_cn_names(attack_core.RESNET50_WEIGHTS)
-        self.class_list_for_gui = [item["label"] for item in all_classes]
-        self.class_map_for_gui = {item["label"]: item["value"] for item in all_classes}
+        # --- Image Selection ---
+        image_select_frame = customtkinter.CTkFrame(tab)
+        image_select_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(10,0), sticky="ew")
+        
+        self.targeted_select_button = customtkinter.CTkButton(image_select_frame, text="选择攻击图片", 
+                                                              command=lambda: self.select_attack_image('targeted'))
+        self.targeted_select_button.pack(side="left", padx=10, pady=10)
+        
+        self.targeted_image_path_label = customtkinter.CTkLabel(image_select_frame, text="将使用默认熊猫图片")
+        self.targeted_image_path_label.pack(side="left", padx=10, pady=10)
 
-        info_label = customtkinter.CTkLabel(tab, text="此功能将固定攻击 backend/images/panda.jpg 图片", anchor="center")
-        info_label.grid(row=0, column=0, columnspan=2, padx=20, pady=(10,0))
-
+        # --- Controls ---
         controls_frame = customtkinter.CTkFrame(tab)
         controls_frame.grid(row=1, column=0, columnspan=2, padx=20, pady=10)
 
+        all_classes = get_all_classes_with_cn_names(attack_core.RESNET50_WEIGHTS)
+        self.class_list_for_gui = [item["label"] for item in all_classes]
+        self.class_map_for_gui = {item["label"]: item["value"] for item in all_classes}
+        
         self.target_class_combobox = customtkinter.CTkComboBox(controls_frame, values=self.class_list_for_gui, width=250)
-        # 查找并设置默认值
         default_label = next((item["label"] for item in all_classes if item["value"] == 504), "")
         self.target_class_combobox.set(default_label)
         self.target_class_combobox.pack(side="left", padx=10, pady=10)
@@ -131,6 +157,7 @@ class App(customtkinter.CTk):
         self.progress_bar.set(0)
         self.progress_bar.grid(row=2, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
 
+        # --- Results Display ---
         targeted_results_frame = customtkinter.CTkFrame(tab)
         targeted_results_frame.grid(row=3, column=0, columnspan=2, padx=20, pady=10, sticky="nsew")
         targeted_results_frame.grid_columnconfigure((0,1,2), weight=1)
@@ -162,6 +189,21 @@ class App(customtkinter.CTk):
         self.targeted_adv_text.insert("0.0", "攻击后结果...")
 
     # ---- Callback Functions ----
+    def select_attack_image(self, attack_type):
+        initial_dir = os.path.join(os.path.dirname(__file__), "backend", "images")
+        file_path = filedialog.askopenfilename(initialdir=initial_dir,
+                                               title="选择一个图片文件",
+                                               filetypes=(("Image files", "*.jpg *.jpeg *.png"), ("all files", "*.*")))
+        if not file_path:
+            return
+
+        if attack_type == 'fgsm':
+            self.fgsm_image_path = file_path
+            self.fgsm_image_path_label.configure(text=os.path.basename(file_path))
+        elif attack_type == 'targeted':
+            self.targeted_image_path = file_path
+            self.targeted_image_path_label.configure(text=os.path.basename(file_path))
+
     def select_and_predict_image(self):
         initial_dir = os.path.join(os.path.dirname(__file__), "backend", "images")
         file_path = filedialog.askopenfilename(initialdir=initial_dir,
@@ -195,7 +237,10 @@ class App(customtkinter.CTk):
         self.fgsm_adv_text.insert("0.0", "请稍候...")
         self.update()
 
-        orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = attack_core.generate_fgsm_attack(epsilon)
+        orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = attack_core.generate_fgsm_attack(
+            epsilon=epsilon, 
+            image_path=self.fgsm_image_path
+        )
 
         self.fgsm_orig_text.delete("0.0", "end")
         self.fgsm_orig_text.insert("0.0", orig_txt)
@@ -211,7 +256,7 @@ class App(customtkinter.CTk):
         target_id = self.class_map_for_gui.get(selected_class_str)
 
         if target_id is None:
-            tkinter.messagebox.showerror("错误", "无效的选择，请从列表中选择一个目标。")
+            messagebox.showerror("错误", "无效的选择，请从列表中选择一个目标。")
             return
 
         self.targeted_attack_button.configure(state="disabled")
@@ -227,7 +272,11 @@ class App(customtkinter.CTk):
         attack_thread.start()
 
     def _execute_targeted_attack(self, target_id):
-        results = attack_core.generate_targeted_attack(self.update_progress_bar, target_class_id=target_id)
+        results = attack_core.generate_targeted_attack(
+            self.update_progress_bar, 
+            target_class_id=target_id,
+            image_path=self.targeted_image_path
+        )
         self.after(0, self.update_targeted_ui, results)
 
     def update_progress_bar(self, value):

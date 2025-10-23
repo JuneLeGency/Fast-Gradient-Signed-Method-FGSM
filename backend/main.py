@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, File, UploadFile, WebSocket
+from fastapi import FastAPI, File, UploadFile, WebSocket, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.concurrency import run_in_threadpool
@@ -11,6 +11,8 @@ import asyncio
 import ssl
 import sys
 import logging
+import uuid
+from typing import Optional
 
 # --- 日志配置 ---
 logging.basicConfig(
@@ -60,6 +62,25 @@ def read_root():
     logging.info("根路径被访问。")
     return {"message": "AI 对抗攻击演示后端服务已启动"}
 
+@app.post("/api/upload")
+async def upload_for_attack(file: UploadFile = File(...)):
+    """上传用于攻击的图片并返回一个唯一ID。"""
+    try:
+        # Generate a unique filename to avoid conflicts
+        file_extension = os.path.splitext(file.filename)[1]
+        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        temp_file_path = os.path.join(TEMP_UPLOAD_DIR, unique_filename)
+
+        with open(temp_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        logging.info(f"文件 '{file.filename}' 已上传并保存为 '{unique_filename}'")
+        return {"image_id": unique_filename}
+    except Exception:
+        logging.error("上传文件时发生错误。", exc_info=True)
+        return {"error": "文件上传失败。"}
+
+
 @app.post("/api/predict/")
 async def predict_normal_image(file: UploadFile = File(...)):
     # Construct the temporary file path inside the dedicated directory
@@ -82,11 +103,26 @@ async def predict_normal_image(file: UploadFile = File(...)):
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
 
-@app.get("/api/attack/fgsm/")
-async def perform_fgsm_attack(epsilon: float = 0.05):
+@app.post("/api/attack/fgsm/")
+async def perform_fgsm_attack(epsilon: float = Form(0.05), file: Optional[UploadFile] = File(None)):
+    temp_file_path = None
     try:
-        logging.info(f"正在执行 FGSM 攻击，Epsilon: {epsilon}")
-        orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = await run_in_threadpool(attack_core.generate_fgsm_attack, epsilon=epsilon)
+        image_path_for_attack = None
+        if file:
+            # Save uploaded file temporarily
+            temp_file_path = os.path.join(TEMP_UPLOAD_DIR, f"attack_{file.filename}")
+            with open(temp_file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            image_path_for_attack = temp_file_path
+            logging.info(f"正在使用上传的图片执行 FGSM 攻击: {file.filename}, Epsilon: {epsilon}")
+        else:
+            logging.info(f"正在使用默认图片执行 FGSM 攻击, Epsilon: {epsilon}")
+
+        orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = await run_in_threadpool(
+            attack_core.generate_fgsm_attack, 
+            epsilon=epsilon, 
+            image_path=image_path_for_attack
+        )
         return {
             "original_image": pil_to_base64(orig_pil),
             "perturbation_image": pil_to_base64(pert_pil),
@@ -97,6 +133,11 @@ async def perform_fgsm_attack(epsilon: float = 0.05):
     except Exception:
         logging.error("执行 FGSM 攻击时发生错误。", exc_info=True)
         return {"error": "服务器内部错误，请查看后端日志。"}
+    finally:
+        # Clean up the temporary file if it was created
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
 
 @app.get("/api/classes")
 def get_classes():
@@ -109,7 +150,7 @@ def get_classes():
         return {"error": "无法获取类别列表，请查看后端日志。"}
 
 @app.websocket("/api/attack/targeted_ws")
-async def perform_targeted_attack_ws(websocket: WebSocket, target_class_id: int = 504):
+async def perform_targeted_attack_ws(websocket: WebSocket, target_class_id: int, image_id: Optional[str] = None):
     """通过 WebSocket 执行定向攻击，并实时发送进度和结果。"""
     await websocket.accept()
     loop = asyncio.get_running_loop()
@@ -119,13 +160,25 @@ async def perform_targeted_attack_ws(websocket: WebSocket, target_class_id: int 
             websocket.send_json({"type": "progress", "value": progress}),
             loop
         )
+    
+    image_path_for_attack = None
+    if image_id:
+        image_path_for_attack = os.path.join(TEMP_UPLOAD_DIR, image_id)
+        if not os.path.exists(image_path_for_attack):
+            logging.error(f"请求的图片ID不存在: {image_id}")
+            await websocket.send_json({"type": "error", "message": f"图片文件 '{image_id}' 未找到。"})
+            await websocket.close()
+            return
+        logging.info(f"正在通过 WebSocket 使用图片 '{image_id}' 执行目标攻击，目标类别ID: {target_class_id}")
+    else:
+        logging.info(f"正在通过 WebSocket 使用默认图片执行目标攻击，目标类别ID: {target_class_id}")
 
     try:
-        logging.info(f"正在通过 WebSocket 执行目标攻击，目标类别ID: {target_class_id}")
         orig_pil, pert_pil, adv_pil, orig_txt, adv_txt = await run_in_threadpool(
             attack_core.generate_targeted_attack, 
             target_class_id=target_class_id, 
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            image_path=image_path_for_attack
         )
         
         await websocket.send_json({
@@ -143,6 +196,8 @@ async def perform_targeted_attack_ws(websocket: WebSocket, target_class_id: int 
         await websocket.send_json({"type": "error", "message": "服务器内部错误，请查看后端日志。"})
     finally:
         await websocket.close()
+        # Note: We are not deleting the uploaded image here as it's part of a separate request.
+        # A cleanup mechanism for old files in temp_uploads might be needed for a production system.
 
 # --- 挂载静态文件 (必须在所有API路由之后) ---
 app.mount("/", StaticFiles(directory="../frontend/build", html=True), name="static")

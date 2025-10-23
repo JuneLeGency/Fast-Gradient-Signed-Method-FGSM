@@ -17,6 +17,7 @@ function App() {
   const [epsilon, setEpsilon] = useState(0.05);
   const [fgsmResult, setFgsmResult] = useState(null);
   const [isAttacking, setIsAttacking] = useState(false);
+  const [fgsmFile, setFgsmFile] = useState(null);
 
   // State for Targeted Attack Tab
   const [targetClassList, setTargetClassList] = useState([]);
@@ -25,6 +26,8 @@ function App() {
   const [targetedResult, setTargetedResult] = useState(null);
   const [isTargetAttacking, setIsTargetAttacking] = useState(false);
   const [targetedStatus, setTargetedStatus] = useState('等待开始...');
+  const [targetedFile, setTargetedFile] = useState(null);
+
 
   // Fetch class list on component mount
   useEffect(() => {
@@ -73,8 +76,18 @@ function App() {
   const handleFgsmAttack = async () => {
     setIsAttacking(true);
     setFgsmResult(null);
+    
+    const formData = new FormData();
+    formData.append('epsilon', epsilon);
+    if (fgsmFile) {
+        formData.append('file', fgsmFile);
+    }
+
     try {
-      const response = await fetch(`${API_BASE_URL}/attack/fgsm/?epsilon=${epsilon}`);
+      const response = await fetch(`${API_BASE_URL}/attack/fgsm/`, {
+          method: 'POST',
+          body: formData,
+      });
       if (!response.ok) throw new Error(`HTTP 错误! 状态: ${response.status}`);
       const data = await response.json();
       if (data.error) {
@@ -90,7 +103,7 @@ function App() {
     setIsAttacking(false);
   };
 
-  const handleTargetedAttack = () => {
+  const handleTargetedAttack = async () => {
     if (!selectedTarget) {
         alert("请先选择一个攻击目标！");
         return;
@@ -98,9 +111,35 @@ function App() {
     setIsTargetAttacking(true);
     setTargetedResult(null);
     setProgress(0);
+    setTargetedStatus('准备中...');
+
+    let imageId = null;
+    if (targetedFile) {
+        setTargetedStatus('正在上传图片...');
+        const formData = new FormData();
+        formData.append('file', targetedFile);
+        try {
+            const response = await fetch(`${API_BASE_URL}/upload`, { method: 'POST', body: formData });
+            const data = await response.json();
+            if (data.image_id) {
+                imageId = data.image_id;
+            } else {
+                throw new Error(data.error || '上传失败');
+            }
+        } catch (error) {
+            setTargetedStatus(`图片上传失败: ${error.message}`);
+            setIsTargetAttacking(false);
+            return;
+        }
+    }
+
     setTargetedStatus('正在连接到后端服务...');
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/api/attack/targeted_ws?target_class_id=${selectedTarget.value}`;
+    let wsUrl = `${wsProtocol}//${window.location.host}/api/attack/targeted_ws?target_class_id=${selectedTarget.value}`;
+    if (imageId) {
+        wsUrl += `&image_id=${imageId}`;
+    }
+    
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => setTargetedStatus('连接成功，开始执行迭代攻击 (约1-2分钟)...');
@@ -153,7 +192,10 @@ function App() {
           {/* FGSM Attack Tab */}
           <div className={`tab-pane ${activeTab === 'fgsm' ? 'active' : ''}`}>
               <h2>非定向攻击 (FGSM)</h2>
-              <p>此功能将对固定的熊猫图片进行攻击，您可以调整扰动强度 (Epsilon) 来观察效果。</p>
+              <p>选择一张图片进行攻击（若不选择则使用默认熊猫图片），并调整扰动强度 (Epsilon) 来观察效果。</p>
+              <div className="controls">
+                  <input type="file" accept="image/*" onChange={(e) => setFgsmFile(e.target.files[0])} className="file-input" />
+              </div>
               <div className="controls">
                   <label>扰动强度 (Epsilon): {epsilon.toFixed(3)}</label>
                   <input type="range" min="0" max="0.2" step="0.005" value={epsilon} onChange={(e) => setEpsilon(parseFloat(e.target.value))} />
@@ -172,7 +214,10 @@ function App() {
           {/* Targeted Attack Tab */}
           <div className={`tab-pane ${activeTab === 'targeted' ? 'active' : ''}`}>
               <h2>定向攻击</h2>
-              <p>此功能将对固定的熊猫图片进行攻击，请从下方选择一个您想让AI认成的目标。</p>
+              <p>选择一张图片进行攻击（若不选择则使用默认熊猫图片），并从下方选择一个您想让AI认错的目标。</p>
+              <div className="controls">
+                  <input type="file" accept="image/*" onChange={(e) => setTargetedFile(e.target.files[0])} className="file-input" />
+              </div>
               <div className="controls">
                   <div style={{width: '400px', color: 'black'}}>
                     <Select options={targetClassList} defaultValue={selectedTarget} onChange={setSelectedTarget} placeholder="搜索并选择一个攻击目标..." />

@@ -31,42 +31,8 @@ print("模型和数据加载完成。")
 
 
 # --- 预计算和缓存 ---
-FGSM_GRADIENT = None
-FGSM_INPUT_TENSOR = None
-
-
-def precompute_fgsm_gradient():
-    """仅在首次需要时计算并缓存FGSM的梯度。"""
-    global FGSM_GRADIENT, FGSM_INPUT_TENSOR
-    if FGSM_GRADIENT is not None:
-        return
-
-    image_path = os.path.join(BACKEND_DIR, 'images', 'panda.jpg')
-    
-    img_tensor = read_image(image_path)
-
-    # 此处保持自定义的Resize以维持原始FGSM脚本的行为
-    preprocess = transforms.Compose([
-        transforms.Resize((256, 256)),
-        transforms.ConvertImageDtype(torch.float32),
-        transforms.Normalize(mean=ALEXNET_PREPROCESS.mean, std=ALEXNET_PREPROCESS.std),
-    ])
-
-    input_tensor = preprocess(img_tensor).unsqueeze(0)
-    input_tensor.requires_grad = True
-    FGSM_INPUT_TENSOR = input_tensor
-
-    predictions = ALEXNET_MODEL(input_tensor)
-    _, target_class_id = get_name_and_id_from_prediction(predictions, ALEXNET_WEIGHTS)
-    target = torch.LongTensor([target_class_id])
-
-    loss = torch.nn.CrossEntropyLoss()
-    loss_val = loss(predictions, target)
-    ALEXNET_MODEL.zero_grad()
-    loss_val.backward()
-
-    FGSM_GRADIENT = input_tensor.grad.data.sign()
-    print("梯度计算并缓存完成。")
+# 注：由于需要支持用户自定义图片，FGSM的梯度预计算逻辑已被移除。
+# 梯度现在将在每次攻击时动态计算。
 
 
 # --- 核心功能函数 ---
@@ -115,9 +81,14 @@ def predict_image(image_path):
     return display_image, result_text
 
 
-def denormalize_image(tensor):
-    mean = np.array(RESNET50_PREPROCESS.mean)
-    std = np.array(RESNET50_PREPROCESS.std)
+def denormalize_image(tensor, use_alexnet_stats=False):
+    if use_alexnet_stats:
+        mean = np.array(ALEXNET_PREPROCESS.mean)
+        std = np.array(ALEXNET_PREPROCESS.std)
+    else:
+        mean = np.array(RESNET50_PREPROCESS.mean)
+        std = np.array(RESNET50_PREPROCESS.std)
+        
     tensor = tensor.clone().detach().squeeze(0).cpu().numpy()
     tensor = tensor.transpose(1, 2, 0)
     tensor = std * tensor + mean
@@ -125,41 +96,65 @@ def denormalize_image(tensor):
     return Image.fromarray((tensor * 255).astype(np.uint8))
 
 
-def generate_fgsm_attack(epsilon):
-    precompute_fgsm_gradient()
+def generate_fgsm_attack(epsilon, image_path=None):
+    if image_path is None:
+        image_path = os.path.join(BACKEND_DIR, 'images', 'panda.jpg')
 
-    perturbation = epsilon * FGSM_GRADIENT
-    adversarial_tensor = FGSM_INPUT_TENSOR.data + perturbation
+    img_tensor = read_image(image_path)
+    
+    # AlexNet的预处理
+    preprocess = transforms.Compose([
+        transforms.Resize((256, 256)),
+        transforms.ConvertImageDtype(torch.float32),
+        transforms.Normalize(mean=ALEXNET_PREPROCESS.mean, std=ALEXNET_PREPROCESS.std),
+    ])
 
+    input_tensor = preprocess(img_tensor).unsqueeze(0)
+    input_tensor.requires_grad = True
+
+    # 原始预测
+    orig_output = ALEXNET_MODEL(input_tensor)
+    orig_class_name, orig_class_id = get_name_and_id_from_prediction(orig_output, ALEXNET_WEIGHTS)
+    orig_prob = torch.nn.functional.softmax(orig_output[0], dim=0)[orig_class_id].item() * 100
+    original_text = f"原始预测: {orig_class_name}\n置信度: {orig_prob:.2f}%"
+    
+    # 计算梯度
+    target = torch.LongTensor([orig_class_id])
+    loss = torch.nn.CrossEntropyLoss()
+    loss_val = loss(orig_output, target)
+    ALEXNET_MODEL.zero_grad()
+    loss_val.backward()
+    
+    gradient = input_tensor.grad.data.sign()
+
+    # 生成对抗样本
+    perturbation = epsilon * gradient
+    adversarial_tensor = input_tensor.data + perturbation
+
+    # 对抗样本预测
     adversarial_output = ALEXNET_MODEL(adversarial_tensor)
     adv_prob, adv_catid_tensor = torch.topk(torch.nn.functional.softmax(adversarial_output[0], dim=0), 1)
     adv_class_id = adv_catid_tensor[0].item()
+    adv_class_name = get_cn_name_by_id(adv_class_id, ALEXNET_WEIGHTS)
+    adv_probability = adv_prob[0].item() * 100
+    adversarial_text = f"攻击后预测: {adv_class_name}\n置信度: {adv_probability:.2f}%"
 
-    original_pil = denormalize_image(FGSM_INPUT_TENSOR)
-    adversarial_pil = denormalize_image(adversarial_tensor)
+    # 准备返回图像
+    original_pil = denormalize_image(input_tensor, use_alexnet_stats=True)
+    adversarial_pil = denormalize_image(adversarial_tensor, use_alexnet_stats=True)
 
     perturbation_vis = perturbation.squeeze(0).detach().cpu().numpy()
     perturbation_vis = (perturbation_vis - perturbation_vis.min()) / (
                 perturbation_vis.max() - perturbation_vis.min())
     perturbation_pil = Image.fromarray((np.transpose(perturbation_vis, (1, 2, 0)) * 255).astype(np.uint8))
 
-    # 原始结果文本
-    with torch.no_grad():
-        orig_output = ALEXNET_MODEL(FGSM_INPUT_TENSOR)
-        orig_class_name, orig_class_id = get_name_and_id_from_prediction(orig_output, ALEXNET_WEIGHTS)
-        orig_prob = torch.nn.functional.softmax(orig_output[0], dim=0)[orig_class_id].item() * 100
-        original_text = f"原始预测: {orig_class_name}\n置信度: {orig_prob:.2f}%"
-
-    # 攻击结果文本
-    adv_class_name = get_cn_name_by_id(adv_class_id, ALEXNET_WEIGHTS)
-    adv_probability = adv_prob[0].item() * 100
-    adversarial_text = f"攻击后预测: {adv_class_name}\n置信度: {adv_probability:.2f}%"
-
     return original_pil, perturbation_pil, adversarial_pil, original_text, adversarial_text
 
 
-def generate_targeted_attack(progress_callback, target_class_id=504):
-    image_path = os.path.join(BACKEND_DIR, 'images', 'panda.jpg')
+def generate_targeted_attack(progress_callback, target_class_id=504, image_path=None):
+    if image_path is None:
+        image_path = os.path.join(BACKEND_DIR, 'images', 'panda.jpg')
+        
     img_tensor = read_image(image_path)
 
     preprocess_no_norm = transforms.Compose([
